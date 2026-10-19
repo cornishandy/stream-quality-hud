@@ -17,7 +17,7 @@ Why the HUD works the way it does. Newest first.
 
 ## 1.0–1.2: exact evidence only
 Two independent code reviews (GPT-6.1-Sol, NO-GO twice) shaped these rules:
-- **No background requests, no host permissions.** An early version re-fetched stream lists with the page's credentials. That's a privacy and security risk, so it was removed. The HUD only reads what the page already downloaded.
+- **No background requests, no host permissions.** An early version fetched stream lists again from the extension's background, with access to every site. That's a privacy and security risk, so it was removed. Now the HUD only re-reads lists the page itself already downloaded, from inside the page with the page's own rights (usually from the browser's cache).
 - **A verdict needs the video's own list.** That's either its HLS source, or the list whose segments match the video's newest downloads since it started playing. A trailer's list, a hidden second video, trick-play tracks or a multi-period DASH list can't certify "best".
 - **The HUD never touches audio.** It creates no AudioContext and doesn't read channel counts through Web Audio, so turning it on or off can't change what you hear.
 - **Toggle is Control+Shift+H.** Control+Option+Shift combinations are commonly taken by window managers.

@@ -32,7 +32,7 @@ Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Onl
 ## What it reads, and what it doesn't
 
 - It only reads what the page already has: the `<video>` element, the browser's own playback stats, the stream lists (DASH `.mpd`, HLS `.m3u8`) the page downloaded, and which formats the browser says it can decode.
-- **No network requests of its own, and no host permissions.** It never fetches anything in the background, and it sends nothing anywhere.
+- **No host permissions, and nothing sent anywhere.** To read a stream list, it asks the browser again for a list the page itself already downloaded, from inside the page with the page's own rights. The browser usually answers that from its cache. It never contacts any other address and never fetches in the background.
 - **It never touches sound.** It doesn't create an audio context and doesn't hook the audio path.
 - **A verdict needs exact evidence:** the list the video itself is playing (its HLS source, or the list matching its own newest downloads since it started). Without that, it says it can't confirm, rather than guessing.
 - **Per-service limits** (for example, Netflix sends Chrome up to 1080p and Safari up to 4K) come from each service's own help pages. Sources and quotes are in [docs/SERVICES.md](docs/SERVICES.md) and [docs/SOUND.md](docs/SOUND.md).
