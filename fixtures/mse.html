@@ -1,0 +1,24 @@
+<!doctype html><title>mse test</title><body style="margin:0;background:#000">
+<video id=v muted playsinline style="width:960px;height:540px;display:block"></video>
+<script>
+const q=new URLSearchParams(location.search), rep=q.get('rep')||'1', other=q.get('xo');
+const codecs={0:'avc1.64001e',1:'avc1.64001f',2:'avc1.640028'}[rep];
+const mpd=other?('http://cdn.test:'+other+'/dash/stream.mpd'):'dash/stream.mpd';
+(async()=>{
+  await fetch(mpd, other?{mode:'no-cors'}:{}); // the "player" reads its quality list
+  if(q.get('trailer')) await fetch('trailer.m3u8'); // and a trailer's list
+  const ms=new MediaSource(); v.src=URL.createObjectURL(ms);
+  await new Promise(r=>ms.addEventListener('sourceopen',r,{once:true}));
+  const sb=ms.addSourceBuffer('video/mp4; codecs="'+codecs+'"');
+  const ab=q.get('audio')?ms.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"'):null; // Chrome wants every buffer before the first append
+  const add=b=>new Promise(r=>{sb.addEventListener('updateend',r,{once:true});sb.appendBuffer(b)});
+  for(const f of ['init-'+rep+'.m4s',...[1,2,3].map(n=>'chunk-'+rep+'-0000'+n+'.m4s')]) await add(await (await fetch('dash/'+f)).arrayBuffer());
+  if(q.get('audio')){ // 12 s of digital silence (AAC stereo), and the video stays muted
+    for(const f of ['init-3.m4s','chunk-3-00001.m4s','chunk-3-00002.m4s','chunk-3-00003.m4s']){
+      const buf=await (await fetch('dash/'+f)).arrayBuffer();
+      await new Promise(r=>{ab.addEventListener('updateend',r,{once:true});ab.appendBuffer(buf)});
+    }
+  }
+  ms.endOfStream(); v.play(); document.title='playing';
+})().catch(e=>document.title='error '+e);
+</script></body>

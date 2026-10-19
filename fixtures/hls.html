@@ -1,0 +1,4 @@
+<!doctype html><title>hls list test</title><body style="margin:0;background:#000">
+<video id=v src="clip720.mp4" muted autoplay loop playsinline style="width:960px;height:540px;display:block"></video>
+<script>const other=new URLSearchParams(location.search).get('xo');
+fetch(other?('http://cdn.test:'+other+'/master.m3u8'):'master.m3u8', other?{mode:'no-cors'}:{});</script></body>

@@ -1,0 +1,17 @@
+{
+  "name": "stream-quality-hud",
+  "version": "1.5.0",
+  "private": true,
+  "description": "A small panel over streaming video that says what is really playing and whether it is the best version the site offers.",
+  "author": "cornishandy",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tools/build-userscript.sh",
+    "serve": "tools/serve-fixtures.sh",
+    "test": "node tests/run.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

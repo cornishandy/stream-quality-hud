@@ -1,0 +1,12 @@
+<!doctype html><title>hls audio list test</title><body style="margin:0;background:#000">
+<video id=v muted autoplay loop playsinline style="width:960px;height:540px;display:block"></video>
+<script>
+// A "player" that read an HLS list with two audio groups, then loaded the 720p video list and the stereo audio list.
+// The picture itself is the 720p clip (no sound track at all).
+(async()=>{
+  v.src='clip720.mp4';
+  await new Promise(r=>v.addEventListener('loadedmetadata',r,{once:true}));
+  await fetch('hlsa/master.m3u8'); await fetch('hlsa/v720.m3u8'); await fetch('hlsa/a-stereo.m3u8');
+  document.title='playing';
+})().catch(e=>document.title='error '+e);
+</script></body>

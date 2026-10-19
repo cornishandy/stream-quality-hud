@@ -1,0 +1,15 @@
+<!doctype html><title>hls playable-versions test</title><body style="margin:0;background:#000">
+<video id=v muted autoplay loop playsinline style="width:960px;height:540px;display:block"></video>
+<script>
+// A "player" that read an HLS list (1080p SDR, 1080p HDR10, 1440p HEVC HDR10, 4K VVC HDR10), then loaded the 1080p SDR list.
+// The picture itself is the 1080p clip.
+(async()=>{
+  v.src='clip1080.mp4';
+  await new Promise(r=>v.addEventListener('loadedmetadata',r,{once:true}));
+  // ?m=hdr: only the two 1080p versions (SDR and HDR10). ?m=vvc: 1080p SDR and the 4K VVC version.
+  const m=new URLSearchParams(location.search).get('m');
+  await fetch(m==='hdr'?'hlsp/hdr.m3u8':m==='vvc'?'hlsp/vvc.m3u8':'hlsp/master.m3u8');
+  await fetch('hlsp/v1080.m3u8');
+  document.title='playing';
+})().catch(e=>document.title='error '+e);
+</script></body>
