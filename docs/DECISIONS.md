@@ -2,6 +2,11 @@
 
 Why the HUD works the way it does. Newest first.
 
+## 1.5.1 (19 Oct 2026): shorter wording
+- **Headings are 2 to 5 words, under 36 characters,** with the words that matter first and no filler: "Best for Safari", "Picture below best". Notes and lines get the same treatment. The panel had grown wordy enough to lose its meaning.
+- **"Elsewhere", not "Better".** The service's best anywhere (say, 4K HDR in its TV apps) read as if this film was on offer in 4K. The line now starts "Elsewhere:" and ends "not every title".
+- **Refresh says whose limit it is.** "Safari's page limit, not the video's" replaces "draws pages at 60 Hz to save power", which read as the Mac holding playback back.
+
 ## 1.5 (18 Oct 2026): judged rows and a verdict, not raw numbers
 - **A verdict headline replaces the green status text.** The old line ("Best size…") coloured a technical fact green, which didn't answer the real question: is this the best I can get here, and if not, where? The verdict now says that in words, worst problem first: not the best picture yet → best picture but not the best sound → best this browser gets, more elsewhere → best this site offers → can't confirm.
 - **A cue dot carries the colour, not the text.** It sits in the top-right corner, where a projectionist's reel-change mark appears. Sage means best here, blue means more exists elsewhere, amber means not the best, and a hollow ring means can't confirm.

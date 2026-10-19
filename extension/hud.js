@@ -593,7 +593,7 @@
   function sourceKind(video) {
     const src = video.currentSrc || '';
     if (/^blob:/.test(src)) return 'adaptive stream (Media Source)';
-    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (played by WebKit itself)';
+    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (WebKit’s own player)';
     if (/^https?:/.test(src)) return 'single file';
     return src ? src.split(':')[0] : 'none';
   }
@@ -606,7 +606,7 @@
     const direct = ladders.filter((L) => L.kind === 'HLS' && noFrag(L.url) === src);
     if (direct.length) {
       const L = direct[direct.length - 1];
-      return L.variants.some((v) => near(v, vw, vh)) ? { state: 'ok', ladder: L, how: 'the video’s own source' } : { state: 'nomatch' };
+      return L.variants.some((v) => near(v, vw, vh)) ? { state: 'ok', ladder: L, how: 'its source' } : { state: 'nomatch' };
     }
     // Entries arrive in completion order, not start order, so look at all of them for the newest start.
     const since = sessionStart.has(video) ? sessionStart.get(video) : -Infinity;
@@ -620,7 +620,7 @@
     if (uniq(owners.map(topKey)).length > 1) return { state: 'ambiguous' };
     const fit = owners.filter((L) => L.variants.some((v) => near(v, vw, vh)));
     if (!fit.length) return { state: 'nomatch' };
-    return { state: 'ok', ladder: fit[fit.length - 1], how: 'the video’s own downloads', entry: newest };
+    return { state: 'ok', ladder: fit[fit.length - 1], how: 'its downloads', entry: newest };
   }
 
   // ---------- what each service offers anywhere ----------
@@ -630,14 +630,14 @@
   // Sound 'spatial' is Netflix's spatial audio (Premium, eligible titles): a 2-channel mix, not 5.1 or Atmos.
   // Checked 18 Oct 2026 (GPT-6.1-Sol, from the services' help pages). '' = not published.
   const SERVICES = [
-    { name: 'Netflix', more: 'Safari', hosts: ['netflix.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or Netflix’s TV and Windows apps; Premium plan', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '720p' }, sound: { best: 'Dolby Atmos', where: 'Premium; Apple TV 4K app', caps: { chrome: 'spatial', safari: 'spatial', firefox: 'spatial', edge: 'spatial' } } },
-    { name: 'Prime Video', more: 'TV apps', hosts: ['primevideo.com', 'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.ca', 'amazon.co.jp', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.com.au'], path: /^\/gp\/video\//, pathHost: /(^|\.)amazon\./, best: '4K HDR (Dolby Vision)', where: 'Prime Video’s TV apps, e.g. Apple TV 4K; US 4K needs Prime Video Ultra', caps: { chrome: 'HD', safari: 'HD', firefox: 'HD', edge: 'HD' }, sound: { best: 'Dolby Atmos', where: 'US Ultra; Fire TV / Apple TV apps', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
-    { name: 'Disney+', more: 'TV apps', hosts: ['disneyplus.com'], best: '4K HDR (Dolby Vision)', where: 'Disney+ TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: 'Dolby Atmos / DTS:X', where: 'Premium; TV apps; DTS:X select Android TVs', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
-    { name: 'HBO Max', more: 'TV apps', hosts: ['max.com', 'hbomax.com'], best: '4K HDR (Dolby Vision)', where: 'HBO Max TV apps; Premium plan', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '' }, sound: { best: 'Dolby Atmos', where: 'Premium TV apps; select sports Standard/Premium', caps: {} } },
-    { name: 'Apple TV+', more: 'Safari', hosts: ['tv.apple.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or the Apple TV app', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '1080p' }, sound: { best: 'Dolby Atmos', where: 'Apple TV 4K / compatible native Mac TV app', caps: {} } },
-    { name: 'Hulu', more: 'TV apps', hosts: ['hulu.com'], best: '4K HDR (Dolby Vision)', where: 'Hulu TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: '5.1', where: 'both standalone plans; device list unknown', caps: {} } },
-    { name: 'Paramount+', more: 'TV apps', hosts: ['paramountplus.com'], best: '4K HDR (Dolby Vision)', where: 'Paramount+ TV apps; Premium plan', caps: {} , sound: { best: 'Dolby Atmos', where: 'International Premium; supported TV apps', caps: {} } },
-    { name: 'Peacock', more: 'some 4K devices', hosts: ['peacocktv.com'], best: '4K (Dolby Vision on some titles)', where: 'some supported 4K devices; Premium plans', caps: {} , sound: { best: 'Dolby Atmos', where: 'eligible titles and devices', caps: {} } },
+    { name: 'Netflix', hosts: ['netflix.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or Netflix’s TV and Windows apps; Premium plan', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '720p' }, sound: { best: 'Dolby Atmos', where: 'Premium; Apple TV 4K app', caps: { chrome: 'spatial', safari: 'spatial', firefox: 'spatial', edge: 'spatial' } } },
+    { name: 'Prime Video', hosts: ['primevideo.com', 'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.ca', 'amazon.co.jp', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.com.au'], path: /^\/gp\/video\//, pathHost: /(^|\.)amazon\./, best: '4K HDR (Dolby Vision)', where: 'Prime Video’s TV apps, e.g. Apple TV 4K; US 4K needs Prime Video Ultra', caps: { chrome: 'HD', safari: 'HD', firefox: 'HD', edge: 'HD' }, sound: { best: 'Dolby Atmos', where: 'US Ultra; Fire TV / Apple TV apps', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
+    { name: 'Disney+', hosts: ['disneyplus.com'], best: '4K HDR (Dolby Vision)', where: 'Disney+ TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: 'Dolby Atmos / DTS:X', where: 'Premium; TV apps; DTS:X select Android TVs', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
+    { name: 'HBO Max', hosts: ['max.com', 'hbomax.com'], best: '4K HDR (Dolby Vision)', where: 'HBO Max TV apps; Premium plan', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '' }, sound: { best: 'Dolby Atmos', where: 'Premium TV apps; select sports Standard/Premium', caps: {} } },
+    { name: 'Apple TV+', hosts: ['tv.apple.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or the Apple TV app', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '1080p' }, sound: { best: 'Dolby Atmos', where: 'Apple TV 4K / compatible native Mac TV app', caps: {} } },
+    { name: 'Hulu', hosts: ['hulu.com'], best: '4K HDR (Dolby Vision)', where: 'Hulu TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: '5.1', where: 'both standalone plans; device list unknown', caps: {} } },
+    { name: 'Paramount+', hosts: ['paramountplus.com'], best: '4K HDR (Dolby Vision)', where: 'Paramount+ TV apps; Premium plan', caps: {} , sound: { best: 'Dolby Atmos', where: 'International Premium; supported TV apps', caps: {} } },
+    { name: 'Peacock', hosts: ['peacocktv.com'], best: '4K (Dolby Vision on some titles)', where: 'some supported 4K devices; Premium plans', caps: {} , sound: { best: 'Dolby Atmos', where: 'eligible titles and devices', caps: {} } },
     { name: 'AMC+', hosts: ['amcplus.com'], best: '', where: '', caps: {} },
     { name: 'MUBI', hosts: ['mubi.com'], best: '4K on selected films', where: 'which devices isn’t stated', caps: {} , sound: { best: '5.1', where: 'Safari on a Mac, tvOS, Fire TV; selected films', caps: { safari: '5.1' } } },
     { name: 'Criterion Channel', hosts: ['criterionchannel.com'], best: '', where: '', caps: {} },
@@ -763,7 +763,7 @@
     if (major.length <= 1) {
       const ms = median(shown), k = inRefreshes(ms);
       // Times that aren't whole screen refreshes are planned times (WebKit reports these), not what the screen did.
-      if (period && !k) return { fps, even: true, unknown: true, value: 'can’t check here', why: 'this browser reports when frames are due (every ' + ms.toFixed(1) + ' ms), not when shown' };
+      if (period && !k) return { fps, even: true, unknown: true, value: 'can’t check here', why: 'browser gives due times (every ' + ms.toFixed(1) + ' ms), not shown times' };
       value = 'even: each frame ' + ms.toFixed(1) + ' ms' + (k ? ' (' + k + ' refreshes)' : '');
     } else {
       const ks = major.map((g) => inRefreshes(g.v));
@@ -791,13 +791,12 @@
     const fam = !codec || / or /.test(codec) ? -1 : /H\.264/.test(codec) ? 0 : 1;
     const [lo, hi] = fam < 0 ? [TYPICAL[size][1][0], TYPICAL[size][0][1]] : TYPICAL[size][fam];
     const what = (size === 'sd' ? 'this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
-    const range = 'typical for ' + what + ' is ' + lo + ' to ' + hi;
+    const range = 'typical ' + what + ': ' + lo + '–' + hi;
     if (bps / 1e6 >= lo) return ['normal', range];
-    if (measured) return ['note', 'lean; ' + range + ', and it varies by scene'];
+    if (measured) return ['note', 'lean; ' + range + '; varies by scene'];
     return [bps / 1e6 < lo / 2 ? 'unusual' : 'note', 'lean; ' + range];
   }
 
-  const an = (word) => (/^(HDR|HLG|SDR|8|11|18)/.test(word) ? 'an ' : 'a ') + word;
   // A version's identity: HLS variants that share a playlist are one picture (they differ only in their sound group).
   const versionKey = (v) => (v.hls ? [...v.exact][0] || '' : [v.w, v.h, v.bps, v.codecs, v.range].join('|'));
 
@@ -805,9 +804,9 @@
 
   function report() {
     const video = mainVideo();
-    if (!video) return { status: 'wait', title: 'No visible video on this page yet', lines: [], sections: [] };
+    if (!video) return { status: 'wait', title: 'No video yet', lines: [], sections: [] };
     const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw || !vh) return { status: 'wait', title: 'Waiting for the first video frame', lines: [], sections: [{ name: 'Playback', rows: [['Source', sourceKind(video), '', '']] }] };
+    if (!vw || !vh) return { status: 'wait', title: 'Waiting for first frame', lines: [], sections: [{ name: 'Playback', rows: [['Source', sourceKind(video), '', '']] }] };
 
     const m = measure(video);
     const cfg = trackConfig(video);
@@ -877,74 +876,74 @@
     // ---- headline: status, title, the lines that explain it, and what to do
     let status, title;
     const lines = [];
-    const capLine = () => (cap === 'HD' ? playTag + ' is within “HD”, all ' + site + ' says it sends ' + B + '.' : playTag + ' is the most ' + site + ' sends ' + B + '.');
+    const capLine = () => (cap === 'HD' ? playTag + ': within “HD”, ' + site + '’s most for ' + B + '.' : playTag + ': ' + site + '’s most for ' + B + '.');
     const topLine = () => {
-      const more = elsewhere ? '' : svc ? (svc.best ? ' ' + site + ' publishes nothing higher.' : ' ' + site + ' doesn’t publish whether its apps get more.') : ' The site doesn’t say whether its apps get more.';
-      return playTag + ' is ' + (count === 1 ? 'the only version ' : 'the top of the ' + count + ' versions ') + (svc ? site : 'the site') + ' sent ' + B + '.' + more;
+      const more = elsewhere ? '' : svc && svc.best ? ' Nothing higher published.' : ' Apps’ best unknown.';
+      return playTag + ': ' + (count === 1 ? 'only version' : 'top of ' + count + ' versions') + ' sent.' + more;
     };
     if (pic === 'lower') {
       status = 'lower';
-      title = early ? 'Not the best picture yet' : 'Not the best picture';
-      lines.push('Playing ' + playTag + '; ' + (svc ? site : 'this site') + ' offers ' + B + ' ' + tag(topPlay[0].w, topPlay[0].h) + '.');
-      if (early) lines.push('Players start low and step up during the first minute.');
+      title = early ? 'Picture not best yet' : 'Picture below best';
+      lines.push('Playing ' + playTag + '; list goes to ' + tag(topPlay[0].w, topPlay[0].h) + '.');
+      if (early) lines.push('Players start low; give it a minute.');
     } else if (pic === 'belowcap') {
       status = 'lower';
-      title = early ? 'Not the best picture yet' : 'Below ' + site + '’s top for ' + B;
-      lines.push('Playing ' + playTag + '; ' + site + ' sends ' + B + ' up to ' + cap + ' when the title and plan have it.');
-      if (early) lines.push('Players start low and step up during the first minute.');
-      else hints.push('If it stays here: this title or your plan may not include ' + cap + '; otherwise check your connection and the account’s playback setting.');
+      title = early ? 'Picture not best yet' : 'Below ' + site + '’s ' + cap + ' for ' + B;
+      lines.push('Playing ' + playTag + '; up to ' + cap + ' if title and plan allow.');
+      if (early) lines.push('Players start low; give it a minute.');
+      else hints.push('Stuck here? Title or plan may lack ' + cap + '; else check connection and playback setting.');
     } else if (pic === 'unknown') {
       status = 'unknown';
-      title = 'Can’t confirm the picture';
+      title = 'Picture unconfirmed';
       lines.push(
         {
-          none: 'No quality list seen to compare with.',
-          ambiguous: 'This video’s latest download belongs to quality lists that disagree on the best.',
-          nomatch: 'The quality list this video uses doesn’t include ' + vw + '×' + vh + '.',
-          unconfirmed: 'None of this page’s quality lists is confirmed as this video’s.',
+          none: 'No quality list seen.',
+          ambiguous: 'Its quality lists disagree on the best.',
+          nomatch: 'Its quality list lacks ' + vw + '×' + vh + '.',
+          unconfirmed: 'No list confirmed as this video’s.',
         }[found ? found.state : 'none']
       );
     } else if (missingHdr) {
       status = 'lower';
       title = 'Best size, not HDR';
-      const what = an(hdrPlayable[0].range);
-      lines.push(what[0].toUpperCase() + what.slice(1) + ' version of ' + playTag + ' is on the list and ' + B + ' can play it; SDR is playing.');
+      lines.push('SDR playing; ' + B + ' can play the listed ' + hdrPlayable[0].range + '.');
     } else if (snd === 'lower' && canBest) {
       status = 'lower';
-      title = 'Best picture, not the best sound';
+      title = 'Best picture, weaker sound';
       lines.push(pic === 'atcap' ? capLine() : topLine());
     } else if (pic === 'topplayable') {
       status = 'elsewhere';
-      title = 'Best ' + B + ' can play here';
-      lines.push('The ' + tag(topV.w, topV.h) + ' version is ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + ', which ' + B + ' says it can’t play.');
+      title = 'Best ' + B + ' can play';
+      lines.push(tag(topV.w, topV.h) + ' is ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + '; ' + B + ' can’t play it.');
     } else if (elsewhere) {
       status = 'elsewhere';
-      title = 'Best ' + B + ' gets here' + (elsewhere.more ? '; ' + elsewhere.more + (/^(Safari)$/.test(elsewhere.more) ? ' gets' : ' get') + ' more' : '');
+      title = 'Best for ' + B;
       lines.push(pic === 'atcap' ? capLine() : topLine());
     } else {
       status = 'best';
-      title = pic === 'topsize' ? 'Top size this site offers' : pic === 'atcap' ? 'Best ' + site + ' sends ' + B : 'Best this site offers';
+      title = pic === 'topsize' ? 'Top size the site offers' : pic === 'atcap' ? 'Best ' + site + ' sends ' + B : 'Best the site offers';
       lines.push(pic === 'atcap' ? capLine() : topLine());
-      if (pic === 'topsize') lines.push('That size comes in several bitrates; the panel can’t tell which is playing.');
+      if (pic === 'topsize') lines.push('Several bitrates at that size; can’t tell which.');
     }
-    if (elsewhere) lines.push('Better: ' + elsewhere.best + '. Where: ' + elsewhere.where + '.');
+    // The service's best anywhere, not a promise for this title.
+    if (elsewhere) lines.push('Elsewhere: ' + elsewhere.best + ', ' + elsewhere.where + '; not every title.');
     lines.push(
       'Sound: ' +
         {
           none: 'this video has no sound track.',
-          best: pA && audioShort(pA) + ', the best on the site’s list.',
-          cant: pA && audioShort(pA) + '; the site’s ' + BA + ' doesn’t play in ' + B + '.',
-          lower: pA && audioShort(pA) + ' is playing; the site also has ' + BA + (canBest ? ', which ' + B + ' can play' + (surroundAny ? ' (a 2-channel output folds it to stereo)' : '') + '.' : '.'),
+          best: pA && audioShort(pA) + ', best listed.',
+          cant: pA && audioShort(pA) + '; listed ' + BA + ' won’t play in ' + B + '.',
+          lower: pA && audioShort(pA) + '; ' + BA + ' listed' + (canBest ? ', playable' + (surroundAny ? ' (stereo output folds it)' : '') + '.' : '.'),
           known: pA && audioShort(pA) + '.',
           unknown: sCap
-            ? site + ' sends ' + B + ' ' + sCapText + (ss.best ? '; best anywhere: ' + ss.best + ' (' + ss.where + ')' : '') + '.'
-            : B + ' doesn’t say which track is playing' + (BA ? '; the site lists up to ' + BA + '.' : ss && ss.best ? '; ' + site + '’s best anywhere: ' + ss.best + ' (' + ss.where + ').' : '.'),
+            ? sCapText + ', ' + site + '’s most for ' + B + (ss.best ? '; ' + ss.best + ' elsewhere' : '') + '.'
+            : 'track not reported' + (BA ? '; up to ' + BA + ' listed.' : ss && ss.best ? '; ' + ss.best + ' elsewhere.' : '.'),
         }[snd]
     );
-    if (snd === 'lower' && canBest) hints.push('Pick the ' + BA + ' track in the player’s audio menu, if it has one.');
+    if (snd === 'lower' && canBest) hints.push('Pick ' + BA + ' in the player’s audio menu, if any.');
     if (pic === 'lower') {
-      if (shown && shown.w < topPlay[0].w * 0.9) hints.push('The video is only ' + shown.w + '×' + shown.h + ' screen pixels, so the player may pick a smaller size on purpose. Try full screen.');
-      if (!early) hints.push('If it stays low: check the player’s quality setting (Prime: ⚙ → Video quality → Best) and your connection.');
+      if (shown && shown.w < topPlay[0].w * 0.9) hints.push('Small on screen (' + shown.w + '×' + shown.h + '), so the player may pick lower. Try full screen.');
+      if (!early) hints.push('Still low? Check quality setting (Prime: ⚙ → Video quality → Best) and connection.');
     }
 
     // ---- Picture
@@ -952,11 +951,11 @@
     const playJ = {
       top: ['normal', ''],
       topsize: ['normal', ''],
-      topplayable: ['normal', 'the best ' + B + ' can play from the list'],
-      lower: early ? ['note', 'players start low; give it a minute'] : ['unusual', 'the list offers ' + B + ' up to ' + (topPlay ? tag(topPlay[0].w, topPlay[0].h) : '')],
-      atcap: ['normal', cap === 'HD' ? 'within “HD”, ' + site + '’s word; it gives no number' : ''],
-      belowcap: early ? ['note', 'players start low; give it a minute'] : ['note', site + ' sends ' + B + ' up to ' + cap + ' when the title and plan have it'],
-      unknown: ['note', found ? 'no confirmed quality list to compare' : 'no quality list to compare'],
+      topplayable: ['normal', 'best ' + B + ' can play'],
+      lower: early ? ['note', 'players start low; give it a minute'] : ['unusual', 'list goes to ' + (topPlay ? tag(topPlay[0].w, topPlay[0].h) : '')],
+      atcap: ['normal', cap === 'HD' ? '“HD” is ' + site + '’s word; no number' : ''],
+      belowcap: early ? ['note', 'players start low; give it a minute'] : ['note', 'up to ' + cap + ' if title and plan allow'],
+      unknown: ['note', found ? 'no confirmed list' : 'no list seen'],
     }[pic];
     pictureRows.push(['Playing', sizeName(vw, vh) + (codec ? ', ' + codec : ''), ...playJ]);
     if (ladder) {
@@ -965,38 +964,38 @@
         'Site’s best',
         topV.w + '×' + topV.h + ', ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + (rangeOf(topVs) ? ', ' + rangeOf(topVs) : ''),
         '',
-        count + (count === 1 ? ' version' : ' versions') + ' to ' + tag(topV.w, topV.h) + ', ' + (ranges.length ? 'with ' + ranges.join(' and ') : 'all SDR') + ' (' + ladder.kind + (ladder.part ? ', ' + ladder.part : '') + '); matched to ' + found.how,
+        count + (count === 1 ? ' version, ' : ' versions, ') + (ranges.length ? 'with ' + ranges.join(' and ') : 'all SDR') + ' (' + ladder.kind + (ladder.part ? ', ' + ladder.part : '') + '); matched to ' + found.how,
       ]);
     } else if (found) {
       const tops = uniq(ladders.map((L) => tag(topOf(L)[0].w, topOf(L)[0].h)));
-      pictureRows.push(['Lists seen', ladders.length + ' (best in them: ' + tops.join(', ') + ')', 'note', { ambiguous: 'they disagree on the best', nomatch: 'the one this video uses lacks its size', unconfirmed: 'not confirmed as this video’s' }[found.state]]);
+      pictureRows.push(['Lists seen', ladders.length + ' (best in them: ' + tops.join(', ') + ')', 'note', { ambiguous: 'disagree on the best', nomatch: 'video’s list lacks its size', unconfirmed: 'none confirmed as video’s' }[found.state]]);
     }
     if (svc) pictureRows.push(serviceRow(svc, b, cap));
     let colJ;
-    if (isHdr) colJ = screenHdr ? ['normal', 'HDR on an HDR screen'] : ['note', 'this screen is SDR only, so it shows as SDR'];
+    if (isHdr) colJ = screenHdr ? ['normal', 'HDR on an HDR screen'] : ['note', 'SDR-only screen shows it as SDR'];
     else if (!playingRange) colJ = ['note', B + ' doesn’t say'];
-    else if (/ or /.test(playingRange)) colJ = ['note', 'the list has this size in both; can’t tell which is playing'];
-    else if (missingHdr) colJ = ['unusual', 'the list has ' + an(hdrPlayable[0].range) + ' version of this size ' + B + ' can play'];
-    else if (hdrPlayable.length) colJ = ['normal', 'the list has ' + an(hdrPlayable[0].range) + ' version of this size, but this screen is SDR only'];
-    else if (hdrHere.length) colJ = ['normal', 'the list’s HDR versions need a codec ' + B + ' can’t play'];
-    else if (ladder && ladder.variants.some((v) => v.range)) colJ = ['normal', 'the list’s HDR versions are other sizes'];
-    else if (ladder) colJ = ['normal', 'the list has no HDR' + (screenHdr ? '' : '; this screen is SDR only')];
-    else colJ = ['note', 'no list to check for HDR versions'];
+    else if (/ or /.test(playingRange)) colJ = ['note', 'both listed at this size; can’t tell which'];
+    else if (missingHdr) colJ = ['unusual', hdrPlayable[0].range + ' listed at this size; ' + B + ' can play it'];
+    else if (hdrPlayable.length) colJ = ['normal', hdrPlayable[0].range + ' listed; screen is SDR only'];
+    else if (hdrHere.length) colJ = ['normal', 'listed HDR needs a codec ' + B + ' lacks'];
+    else if (ladder && ladder.variants.some((v) => v.range)) colJ = ['normal', 'listed HDR is other sizes'];
+    else if (ladder) colJ = ['normal', 'no HDR listed' + (screenHdr ? '' : '; screen is SDR only')];
+    else colJ = ['note', 'no list to check'];
     pictureRows.push(['Colour', playingRange || 'not reported', ...colJ]);
     const listed = exact.length === 1 ? exact : playing;
     if (listed.length && rangeOf(listed)) {
       const bps = Math.max(...listed.map((v) => v.bps));
       const j = judgeBitrate(bps, playTag, codec, false);
-      if (exact.length !== 1 && rangeOf(listed).includes('–')) j[1] += '; judged on the high end';
-      pictureRows.push(['Bitrate', rangeOf(listed) + ' (site’s list' + (ladder.kind === 'HLS' ? ', with sound' : '') + ')' + (m.rate ? ', ' + mbps(m.rate) + ' measured' : ''), ...j]);
+      if (exact.length !== 1 && rangeOf(listed).includes('–')) j[1] += '; judged on high end';
+      pictureRows.push(['Bitrate', rangeOf(listed) + ' listed' + (ladder.kind === 'HLS' ? ' (incl. sound)' : '') + (m.rate ? ', ' + mbps(m.rate) + ' measured' : ''), ...j]);
     } else if (cfg && cfg.bitrate) pictureRows.push(['Bitrate', mbps(cfg.bitrate) + ' (track)', ...judgeBitrate(cfg.bitrate, playTag, codec, false)]);
     else if (m.rate) pictureRows.push(['Bitrate', mbps(m.rate) + ', measured', ...judgeBitrate(m.rate, playTag, codec, true)]);
     if (shown) {
       const k = shown.h / vh;
       pictureRows.push([
         'On screen',
-        shown.w + '×' + shown.h + ' px' + (k > 1.05 ? ', stream enlarged ' + k.toFixed(1) + '×' : k < 0.95 ? ', stream shrunk' : ', pixel for pixel'),
-        ...(k <= 1.05 ? ['normal', 'full detail'] : sizeBest ? ['normal', 'more screen pixels than stream pixels'] : k >= 1.3 ? ['note', 'softer than native'] : ['normal', '']),
+        shown.w + '×' + shown.h + ' px' + (k > 1.05 ? ', enlarged ' + k.toFixed(1) + '×' : k < 0.95 ? ', shrunk' : ', pixel for pixel'),
+        ...(k <= 1.05 ? ['normal', 'full detail'] : sizeBest ? ['normal', 'screen finer than stream'] : k >= 1.3 ? ['note', 'softer than native'] : ['normal', '']),
       ]);
     }
 
@@ -1007,17 +1006,17 @@
     else if (pA) {
       const surround = pA.joc || (pA.ch && pA.ch.n > 2);
       const j = {
-        best: ['normal', 'the best on the site’s list'],
+        best: ['normal', 'best listed'],
         cant: ['normal', B + ' can’t play ' + (bestA && bestA.name)],
-        lower: canBest ? ['unusual', 'the site has ' + BA] : ['note', 'the site lists ' + BA],
-        known: surround || !pA.bps || pA.bps >= 96000 ? ['normal', surround ? 'surround' : pA.bps ? 'typical streaming sound' : ''] : ['note', 'a low bitrate for film sound'],
+        lower: canBest ? ['unusual', BA + ' listed'] : ['note', BA + ' listed'],
+        known: surround || !pA.bps || pA.bps >= 96000 ? ['normal', surround ? 'surround' : pA.bps ? 'typical streaming sound' : ''] : ['note', 'low for film sound'],
       }[snd];
       soundRows.push(['Playing', audioLong(pA) + (measuredA ? ', ' + measuredA + ' measured' : ''), ...j]);
-    } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', B + ' doesn’t say the codec or channels']);
-    if (ss) soundRows.push([site, sCap ? sCapText + ' in ' + B : 'no published sound for ' + B, '', ss.best ? 'best anywhere: ' + ss.best : 'doesn’t publish its best sound']);
-    if (bestA && snd !== 'best') soundRows.push(['Site’s best', audioLong(bestA), '', canBest === false ? B + ' says it can’t play this' : canBest ? B + ' says it can play this' : '']);
-    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'act after the browser; with both on, the sound is processed twice; not visible here']);
-    else soundRows.push(['After this', 'Movie Sound, if on', '', 'acts after the browser' + (surroundAny ? ', on stereo (surround is folded first)' : '') + '; not visible here']);
+    } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'codec and channels not reported']);
+    if (ss) soundRows.push([site, sCap ? sCapText + ' in ' + B : 'no published limit for ' + B, '', ss.best ? 'best anywhere: ' + ss.best : 'doesn’t publish its best sound']);
+    if (bestA && snd !== 'best') soundRows.push(['Site’s best', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest ? B + ' can play it' : '']);
+    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'after the browser; both on = processed twice']);
+    else soundRows.push(['After this', 'Movie Sound, if on', '', 'after the browser' + (surroundAny ? ', on stereo (surround folded)' : '') + '; not seen here']);
 
     // ---- Playback
     const playbackRows = [];
@@ -1028,21 +1027,21 @@
     if (fps) {
       const near2 = (tol) => STANDARD_RATES.find(([r]) => Math.abs(fps - r) <= r * tol);
       const std = listedFps ? near2(0.005) : near2(0.02);
-      playbackRows.push(['Frame rate', Math.round(fps * 1000) / 1000 + ' fps', ...(std ? ['normal', std[1] + (listedFps ? '' : ', measured')] : listedFps ? ['unusual', 'not a usual film or TV rate'] : ['note', 'measured roughly'])]);
+      playbackRows.push(['Frame rate', Math.round(fps * 1000) / 1000 + ' fps', ...(std ? ['normal', std[1] + (listedFps ? '' : ', measured')] : listedFps ? ['unusual', 'not a film or TV rate'] : ['note', 'measured roughly'])]);
     }
     if (hz) {
       const k = fps ? hz / fps : 0;
       let j;
-      if (b === 'safari' && hz <= 61) j = ['normal', 'Safari draws pages at 60 Hz to save power; video can run faster'];
+      if (b === 'safari' && hz <= 61) j = ['normal', 'Safari’s page limit, not the video’s'];
       else if (k && Math.abs(k - Math.round(k)) < 0.05) j = ['normal', Math.round(k) + ' refreshes per frame'];
-      else if (k) j = ['note', 'not a whole number of refreshes per frame'];
+      else if (k) j = ['note', 'uneven refreshes per frame'];
       else j = ['normal', ''];
       playbackRows.push(['Refresh', hz + ' Hz', ...j]);
     }
     if (ft) {
-      const j = ft.unknown ? ['note', ft.why] : !ft.even ? ['unusual', 'slow pans can judder'] : ft.skipped ? ['note', 'a few frames skipped lately'] : ['normal', 'frames shown for equal times'];
+      const j = ft.unknown ? ['note', ft.why] : !ft.even ? ['unusual', 'slow pans can judder'] : ft.skipped ? ['note', 'some skipped lately'] : ['normal', 'equal frame times'];
       playbackRows.push(['Smoothness', ft.value, ...j]);
-    } else if (!video.paused && !video.requestVideoFrameCallback) playbackRows.push(['Smoothness', 'not reported', 'note', 'this browser doesn’t report frame timing']);
+    } else if (!video.paused && !video.requestVideoFrameCallback) playbackRows.push(['Smoothness', 'not reported', 'note', 'frame timing not reported']);
     if (m.q) {
       const t = m.q.totalVideoFrames, d = m.q.droppedVideoFrames, pct = t ? (100 * d) / t : 0;
       // Judged on the last minute, so one hiccup (a seek, a busy moment) doesn't mark the rest of the film.
@@ -1054,7 +1053,7 @@
     }
     const ahead = bufferAhead(video);
     const low = !video.paused && m.playingFor > 10 && ahead < 3 && !(video.duration - video.currentTime < 5);
-    playbackRows.push(['Buffered', Math.round(ahead) + ' s ahead', ...(low ? (early ? ['note', 'low; still filling'] : ['unusual', 'low; playback may stall']) : ['normal', ''])]);
+    playbackRows.push(['Buffered', Math.round(ahead) + ' s ahead', ...(low ? (early ? ['note', 'low; still filling'] : ['unusual', 'low; may stall']) : ['normal', ''])]);
     playbackRows.push(['Source', sourceKind(video), '', '']);
 
     return {

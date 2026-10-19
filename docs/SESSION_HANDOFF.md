@@ -1,8 +1,8 @@
 # Session handoff
 
 ## State (19 Oct 2026)
-- 1.5.0, in daily use in Safari (userscript) and Chrome (unpacked extension).
-- 45/45 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
+- 1.5.1, in daily use in Safari (userscript) and Chrome (unpacked extension).
+- 46/46 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
 - Moved out of a scratch folder into this repo on 19 Oct 2026, with no code changes. The userscript rebuilt byte-identical.
 
 ## History

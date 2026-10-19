@@ -41,7 +41,7 @@ Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Onl
 
 - `extension/hud.js` is the whole HUD. It also runs on its own, without extension APIs, which is how the userscript works.
 - `tools/build-userscript.sh` rebuilds `dist/stream-quality-hud.user.js` from it.
-- **Tests:** 45 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
+- **Tests:** 46 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
   ```
   npm install            # or set PLAYWRIGHT_FROM to a folder that already has playwright-core
   tools/serve-fixtures.sh
@@ -50,11 +50,11 @@ Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Onl
 
 ## Status
 
-- [x] Chrome extension (Manifest V3), 1.5.0
+- [x] Chrome extension (Manifest V3), 1.5.1
 - [x] Safari userscript, built from the same file
 - [x] Picture, Sound and Playback judged Normal / Unusual / Note
 - [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
-- [x] 45/45 tests
+- [x] 46/46 tests
 - [ ] Chrome Web Store listing (not planned)
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for why it works the way it does.

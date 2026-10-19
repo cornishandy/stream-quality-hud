@@ -98,6 +98,7 @@ Caps are for browsers on a Mac. "unknown" means the service doesn't publish it. 
 - HDMI 2.0 with HDCP 2.2 throughout an external device chain [r2].
 - Connection guidance conflicts: one official article says 25 Mbps; another recommends 15 Mbps [r2,r3].
 - Notes: Official browser page provides compatibility, not resolution/HDR ceilings, and retains old OS/browser minimums. Do not equate Premium's 4K entitlement with browser 4K. International and US device lists differ. Orion: unknown.
+- Seen in use (19 Oct 2026, one film, Safari on a Mac with an HDR screen): Paramount+ sent Safari 6 HLS versions, the top one 1920×1080 H.264 SDR at 3.9 Mbps, with AAC stereo. One title, so not a published limit.
 - Sources:
   - [r1] <https://www.paramountplus.com/account/signup/pickplan/> — “Watch in 4K UHD, Dolby Vision or HDR10” (checked 2026-10-18)
   - [r2] <https://support.paramountplus.com/s/article/PI-premium-video-and-audio-formats?language=en_US> — “High speed internet of 25 Mbps or higher … HDMI 2.0 port that supports HDCP 2.2 or later” (checked 2026-10-18)
