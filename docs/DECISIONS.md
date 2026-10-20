@@ -2,6 +2,14 @@
 
 Why the HUD works the way it does. Newest first.
 
+## 1.6.0 (19–20 Oct 2026): compact scorecard
+- **F2 Compact scorecard**, chosen by Andy from 5 mockups and 2 finalists judged by GPT-6.1-Sol, GPT-6-Astra, Grok 4.7 and Gemini 4 Argon.
+- **Five marks:** ▲ better on this Mac, ◇ worth trying, – top sent, ✓ computer best, ? unknown. Shape and colour together; the row text carries the words.
+- **Pill rules:** shown for a known service, or a video of 10 minutes or more; fades after 3 seconds of idle while the video plays.
+- **Accuracy rules:** no "pixel for pixel", no "TV apps only", and the 60 Hz line names a Safari setting worth trying rather than a claim that the Mac holds the video back.
+- **Round 1 corrections:** timing runs only while the pill or panel is connected; cold Smoothness reads “measuring…” without a judgement. Unestablished limits read “unknown”, not a claim that the service publishes nothing. Prime Video’s unnumbered HD needs 1080p for ✓; mono ranks below stereo. Details names the stream list and the browser receiving it.
+- **Final gate (Claude Fable 5.1):** the unnumbered-HD rule applies only when no stream list says more, so a 720p film whose Prime Video list goes to 1080p is still flagged; a mouse click leaves the pill unfocused, so it can fade and Space still reaches the player.
+
 ## 1.5.1 (19 Oct 2026): shorter wording
 - **Headings are 2 to 5 words, under 36 characters,** with the words that matter first and no filler: "Best for Safari", "Picture below best". Notes and lines get the same treatment. The panel had grown wordy enough to lose its meaning.
 - **"Elsewhere", not "Better".** The service's best anywhere (say, 4K HDR in its TV apps) read as if this film was on offer in 4K. The line now starts "Elsewhere:" and ends "not every title".

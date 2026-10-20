@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Stream Quality HUD",
-  "version": "1.5.1",
-  "description": "Shows what a streaming video is really playing and whether it is the best version the site offers. Control+Shift+H or the toolbar button shows or hides it.",
+  "version": "1.6.0",
+  "description": "Shows what a streaming video is really playing and how it compares with the best the service offers any computer. A button over the video, Control+Shift+H or the toolbar button opens it.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",

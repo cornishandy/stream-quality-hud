@@ -1,8 +1,8 @@
 # Session handoff
 
 ## State (19 Oct 2026)
-- 1.5.1, in daily use in Safari (userscript) and Chrome (unpacked extension).
-- 46/46 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
+- 1.6.0 (20 Oct 2026), installed on Andy's Mac: the Safari userscript loads on the next page load; Chrome's unpacked copy is updated on disk and takes effect when the extension is reloaded.
+- 89/89 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
 - Moved out of a scratch folder into this repo on 19 Oct 2026, with no code changes. The userscript rebuilt byte-identical.
 
 ## History
@@ -11,7 +11,7 @@
   - 1.3: Safari userscript and published per-service caps.
   - 1.4: refresh rate and smoothness.
   - 1.5: redesign with a verdict, judged rows, and a sound section.
-- **19 Oct 2026:** published as its own repo. Its companion, [movie-sound](https://github.com/cornishandy/movie-sound), handles the audio side.
+- **19 Oct 2026:** published as its own repo. Its companion, [movie-sound](https://github.com/cornishandy/movie-sound), handles the audio side. 1.6.0 replaces the corner cue and the top verdict with the compact scorecard: a pill, three marked rows, and Details.
 
 ## How to change it
 1. Edit `extension/hud.js`; if a service's caps change, update `docs/SERVICES.md` or `docs/SOUND.md` too.

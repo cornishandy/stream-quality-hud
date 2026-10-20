@@ -1,6 +1,7 @@
-// Stream Quality HUD: shows what the page's main <video> is playing (picture and sound), whether it is
-// the best the site offers this browser, and where better exists. Each line is judged Normal, Unusual or
-// Note. Control+Shift+H or the toolbar button toggles it. It only reads; it never touches the sound.
+// Stream Quality HUD: shows what the page's main <video> is playing (picture and sound) and how it compares
+// with the best the service offers any computer. A pill over the video states the conclusion; it, Control+Shift+H
+// or the toolbar button opens the panel (Picture, Sound and Playback rows, then Details, where each line is
+// judged Normal, Unusual or Note). It only reads; it never touches the sound.
 // (Control+Option+Shift combinations never reach web pages on Andy's Mac, so the key avoids Option.)
 //
 // How it knows "the best version": the page's player downloads a quality list (a DASH .mpd or an
@@ -447,7 +448,7 @@
     }
     if (track && ladder) {
       const byName = ladder.audio.filter((a) => a.hls && a.label && a.label === track.label);
-      if (byName.length && uniq(byName.map(audioLong)).length === 1) return { a: byName[0], how: 'the track’s name in the list' };
+      if (byName.length && uniq(byName.map(audioLong)).length === 1) return { a: byName[0], how: 'its name in the stream list' };
     }
     return null;
   }
@@ -629,17 +630,18 @@
   // own help pages (sources and the date checked: ../SERVICES.md, and ../SOUND.md for `sound`). '' means the service doesn't say.
   // Sound 'spatial' is Netflix's spatial audio (Premium, eligible titles): a 2-channel mix, not 5.1 or Atmos.
   // Checked 18 Oct 2026 (GPT-6.1-Sol, from the services' help pages). '' = not published.
+  // computer bests checked 19 Oct 2026 (GPT-6.1-Sol), sources in ../docs/SERVICES.md "Best on any computer".
   const SERVICES = [
-    { name: 'Netflix', hosts: ['netflix.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or Netflix’s TV and Windows apps; Premium plan', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '720p' }, sound: { best: 'Dolby Atmos', where: 'Premium; Apple TV 4K app', caps: { chrome: 'spatial', safari: 'spatial', firefox: 'spatial', edge: 'spatial' } } },
-    { name: 'Prime Video', hosts: ['primevideo.com', 'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.ca', 'amazon.co.jp', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.com.au'], path: /^\/gp\/video\//, pathHost: /(^|\.)amazon\./, best: '4K HDR (Dolby Vision)', where: 'Prime Video’s TV apps, e.g. Apple TV 4K; US 4K needs Prime Video Ultra', caps: { chrome: 'HD', safari: 'HD', firefox: 'HD', edge: 'HD' }, sound: { best: 'Dolby Atmos', where: 'US Ultra; Fire TV / Apple TV apps', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
-    { name: 'Disney+', hosts: ['disneyplus.com'], best: '4K HDR (Dolby Vision)', where: 'Disney+ TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: 'Dolby Atmos / DTS:X', where: 'Premium; TV apps; DTS:X select Android TVs', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } } },
-    { name: 'HBO Max', hosts: ['max.com', 'hbomax.com'], best: '4K HDR (Dolby Vision)', where: 'HBO Max TV apps; Premium plan', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '' }, sound: { best: 'Dolby Atmos', where: 'Premium TV apps; select sports Standard/Premium', caps: {} } },
-    { name: 'Apple TV+', hosts: ['tv.apple.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or the Apple TV app', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '1080p' }, sound: { best: 'Dolby Atmos', where: 'Apple TV 4K / compatible native Mac TV app', caps: {} } },
-    { name: 'Hulu', hosts: ['hulu.com'], best: '4K HDR (Dolby Vision)', where: 'Hulu TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: '5.1', where: 'both standalone plans; device list unknown', caps: {} } },
-    { name: 'Paramount+', hosts: ['paramountplus.com'], best: '4K HDR (Dolby Vision)', where: 'Paramount+ TV apps; Premium plan', caps: {} , sound: { best: 'Dolby Atmos', where: 'International Premium; supported TV apps', caps: {} } },
-    { name: 'Peacock', hosts: ['peacocktv.com'], best: '4K (Dolby Vision on some titles)', where: 'some supported 4K devices; Premium plans', caps: {} , sound: { best: 'Dolby Atmos', where: 'eligible titles and devices', caps: {} } },
+    { name: 'Netflix', hosts: ['netflix.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or Netflix’s TV and Windows apps; Premium plan', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '720p' }, sound: { best: 'Dolby Atmos', where: 'Premium; Apple TV 4K app', caps: { chrome: 'spatial', safari: 'spatial', firefox: 'spatial', edge: 'spatial' } }, pc: { picture: { best: '4K Dolby Vision', cmp: 'Computer best: up to 4K Dolby Vision in Safari on a Mac (Premium; not every film)', mac: 'safari', macName: 'Safari', complete: true }, sound: { best: 'spatial stereo', cmp: 'Mac best: spatial stereo (Premium; eligible titles)', mac: 'any', complete: false } }, off: 'Dolby Atmos (Windows: Edge or the Netflix app; Premium)' },
+    { name: 'Prime Video', hosts: ['primevideo.com', 'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.ca', 'amazon.co.jp', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.com.au'], path: /^\/gp\/video\//, pathHost: /(^|\.)amazon\./, best: '4K HDR (Dolby Vision)', where: 'Prime Video’s TV apps, e.g. Apple TV 4K; US 4K needs Prime Video Ultra', caps: { chrome: 'HD', safari: 'HD', firefox: 'HD', edge: 'HD' }, sound: { best: 'Dolby Atmos', where: 'US Ultra; Fire TV / Apple TV apps', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } }, pc: { picture: { best: 'HD', cmp: 'Computer best: HD, in browsers and the Mac and Windows apps', mac: 'any', complete: true }, sound: { best: 'stereo', cmp: 'Computer best: stereo, in browsers and the Mac and Windows apps', mac: 'any', complete: true } }, tv: '4K Dolby Vision, Dolby Atmos (US 4K needs Prime Video Ultra)' },
+    { name: 'Disney+', hosts: ['disneyplus.com'], best: '4K HDR (Dolby Vision)', where: 'Disney+ TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: 'Dolby Atmos / DTS:X', where: 'Premium; TV apps; DTS:X select Android TVs', caps: { chrome: 'stereo', safari: 'stereo', firefox: 'stereo', edge: 'stereo' } }, pc: { picture: { best: '720p', cmp: 'Browsers: up to 720p · Windows app: unknown', mac: 'any', complete: false }, sound: { best: 'stereo', cmp: 'Browsers: stereo · Windows app: unknown', mac: 'any', complete: false } }, tv: '4K Dolby Vision, Dolby Atmos; unconfirmed for computers' },
+    { name: 'HBO Max', hosts: ['max.com', 'hbomax.com'], best: '4K HDR (Dolby Vision)', where: 'HBO Max TV apps; Premium plan', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '' }, sound: { best: 'Dolby Atmos', where: 'Premium TV apps; select sports Standard/Premium', caps: {} }, pc: { picture: { best: '720p', cmp: 'Website: up to 720p', mac: 'any', complete: false } }, tv: '4K Dolby Vision, Dolby Atmos (Premium); unconfirmed for computers' },
+    { name: 'Apple TV+', hosts: ['tv.apple.com'], best: '4K HDR (Dolby Vision)', where: 'Safari on a Mac, or the Apple TV app', caps: { chrome: '1080p', safari: '4K', firefox: '1080p', edge: '1080p' }, sound: { best: 'Dolby Atmos', where: 'Apple TV 4K / compatible native Mac TV app', caps: {} }, pc: { picture: { best: '4K HDR', cmp: 'Computer best: up to 4K HDR in Safari on a Mac or the Apple TV app', mac: 'safari', macName: 'Safari', complete: true }, sound: { best: 'Dolby Atmos', cmp: 'Computer best: Dolby Atmos in the Apple TV app on a Mac, to an Atmos receiver over HDMI', mac: '', complete: true } } },
+    { name: 'Hulu', hosts: ['hulu.com'], best: '4K HDR (Dolby Vision)', where: 'Hulu TV apps', caps: { chrome: '720p', safari: '720p', firefox: '720p', edge: '720p' }, sound: { best: '5.1', where: 'both standalone plans; device list unknown', caps: {} }, pc: { picture: { best: '720p', cmp: 'Website: up to 720p', mac: 'any', complete: false } }, tv: '4K Dolby Vision, 5.1; unconfirmed for computers' },
+    { name: 'Paramount+', hosts: ['paramountplus.com'], best: '4K HDR (Dolby Vision)', where: 'Paramount+ TV apps; Premium plan', caps: {} , sound: { best: 'Dolby Atmos', where: 'International Premium; supported TV apps', caps: {} }, tv: '4K Dolby Vision, Dolby Atmos (Premium); unconfirmed for computers' },
+    { name: 'Peacock', hosts: ['peacocktv.com'], best: '4K (Dolby Vision on some titles)', where: 'some supported 4K devices; Premium plans', caps: {} , sound: { best: 'Dolby Atmos', where: 'eligible titles and devices', caps: {} }, tv: '4K (Dolby Vision on some titles), Dolby Atmos; unconfirmed for computers' },
     { name: 'AMC+', hosts: ['amcplus.com'], best: '', where: '', caps: {} },
-    { name: 'MUBI', hosts: ['mubi.com'], best: '4K on selected films', where: 'which devices isn’t stated', caps: {} , sound: { best: '5.1', where: 'Safari on a Mac, tvOS, Fire TV; selected films', caps: { safari: '5.1' } } },
+    { name: 'MUBI', hosts: ['mubi.com'], best: '4K on selected films', where: 'which devices isn’t stated', caps: {} , sound: { best: '5.1', where: 'Safari on a Mac, tvOS, Fire TV; selected films', caps: { safari: '5.1' } }, pc: { sound: { best: '5.1', cmp: 'Computer best: 5.1 in Safari on a Mac (selected films; needs surround output)', mac: '', complete: false } } },
     { name: 'Criterion Channel', hosts: ['criterionchannel.com'], best: '', where: '', caps: {} },
   ];
 
@@ -673,22 +675,38 @@
     const m = /\b(4K|\d{3,4}p|HD)\b/.exec(text || '');
     return m ? RANK[m[1]] || (parseInt(m[1], 10) < 480 ? 0.5 : 0) : 0;
   };
+  // Atmos 8, surround 6, stereo 2, mono 1. A track (channels / JOC) or a published phrase.
+  function soundRank(x) {
+    if (x && typeof x === 'object') {
+      if (x.joc || /Atmos/.test(x.name || '')) return 8;
+      if ((x.ch && x.ch.n >= 6) || /5\.1|7\.1|DTS/.test(x.name || '')) return 6;
+      if ((x.ch && x.ch.n === 1) || /mono/i.test((x.name || '') + ' ' + ((x.ch && x.ch.label) || ''))) return 1;
+      if ((x.ch && x.ch.n === 2) || /stereo|spatial stereo/i.test((x.name || '') + ' ' + ((x.ch && x.ch.label) || ''))) return 2;
+      return 0;
+    }
+    const text = String(x || '');
+    if (/Atmos/.test(text)) return 8;
+    if (/5\.1|7\.1|DTS/.test(text)) return 6;
+    if (/mono/i.test(text)) return 1;
+    if (/stereo|spatial stereo/i.test(text)) return 2;
+    return 0;
+  }
 
   // The service's own row: its published cap for this browser and its best anywhere (plain facts, no judgement).
   function serviceRow(svc, b, cap) {
     const where = b === 'safari' ? 'Safari (Orion isn’t covered)' : BROWSER_LABEL[b] || 'this browser';
-    return [svc.name, cap ? 'up to ' + cap + ' in ' + where : 'no published limit for ' + (BROWSER_LABEL[b] || 'this browser'), '', svc.best ? 'best anywhere: ' + svc.best : 'doesn’t publish its best'];
+    return [svc.name, cap ? 'up to ' + cap + ' in ' + where : 'limit for ' + (BROWSER_LABEL[b] || 'this browser') + ': unknown', '', svc.best ? 'best anywhere: ' + svc.best : 'best anywhere: unknown'];
   }
 
-  // ---------- screen refresh and smoothness (only while the panel is open) ----------
+  // ---------- screen refresh and smoothness (only while the host is connected) ----------
 
   const rafTimes = [];
-  let timingOn = false;
+  let timingOn = false, rafId = null;
   function rafLoop(t) {
     if (!timingOn) return;
     rafTimes.push(t);
     if (rafTimes.length > 121) rafTimes.shift();
-    requestAnimationFrame(rafLoop);
+    rafId = requestAnimationFrame(rafLoop);
   }
 
   // How often the browser redraws the page, snapped to a common display rate. Safari normally draws
@@ -706,27 +724,32 @@
 
   // When each video frame is due on screen (requestVideoFrameCallback), for the frame-timing checks.
   const frameTimes = []; // { t: expected display time, n: presented frame count, m: media time }
-  let frameVideo = null;
+  let frameVideo = null, frameId = null;
   function watchFrames(video) {
-    if (!video.requestVideoFrameCallback || frameVideo === video) return;
+    if (!timingOn || !video.requestVideoFrameCallback || frameVideo === video) return;
+    if (frameVideo && frameId != null) frameVideo.cancelVideoFrameCallback(frameId);
     frameVideo = video;
     frameTimes.length = 0;
     const cb = (now, meta) => {
       if (frameVideo !== video || !timingOn) return;
       frameTimes.push({ t: meta.expectedDisplayTime || now, n: meta.presentedFrames, m: meta.mediaTime });
       if (frameTimes.length > 150) frameTimes.shift();
-      video.requestVideoFrameCallback(cb);
+      frameId = video.requestVideoFrameCallback(cb);
     };
-    video.requestVideoFrameCallback(cb);
+    frameId = video.requestVideoFrameCallback(cb);
   }
 
   function setTiming(on) {
     if (on && !timingOn) {
       timingOn = true;
       rafTimes.length = 0;
-      requestAnimationFrame(rafLoop);
+      rafId = requestAnimationFrame(rafLoop);
     } else if (!on) {
       timingOn = false;
+      if (rafId != null) cancelAnimationFrame(rafId);
+      if (frameVideo && frameId != null) frameVideo.cancelVideoFrameCallback(frameId);
+      rafId = frameId = null;
+      rafTimes.length = 0;
       frameVideo = null;
       frameTimes.length = 0;
     }
@@ -804,9 +827,9 @@
 
   function report() {
     const video = mainVideo();
-    if (!video) return { status: 'wait', title: 'No video yet', lines: [], sections: [] };
+    if (!video) return { wait: true, title: 'No video yet', pill: 'No video yet', dot: 'unk', sections: [] };
     const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw || !vh) return { status: 'wait', title: 'Waiting for first frame', lines: [], sections: [{ name: 'Playback', rows: [['Source', sourceKind(video), '', '']] }] };
+    if (!vw || !vh) return { wait: true, title: 'Waiting for first frame', pill: 'Waiting for first frame', dot: 'unk', sections: [{ name: 'Playback', rows: [['Source', sourceKind(video), '', '']] }] };
 
     const m = measure(video);
     const cfg = trackConfig(video);
@@ -820,7 +843,13 @@
     const cap = (svc && b && svc.caps[b]) || '';
     // Amazon's "HD" gives no number; 720p and up count as within it.
     const capRank = cap === 'HD' ? RANK['720p'] : rankOf(cap);
-    const site = svc ? svc.name : 'this site';
+    let hostName = location.hostname;
+    try {
+      const a = location.ancestorOrigins;
+      if (a && a.length) hostName = new URL(a[a.length - 1]).hostname;
+    } catch (e) {}
+    hostName = hostName.replace(/^www\./, '');
+    const S = svc ? svc.name : hostName;
     const playing = ladder ? ladder.variants.filter((v) => near(v, vw, vh)) : [];
     const exact = found && found.entry ? playing.filter((v) => matches(v, found.entry)) : [];
     const codec = codecName(cfg && cfg.codec) || uniq((exact.length ? exact : playing).map((v) => codecName(v.codecs))).join(' or ');
@@ -830,7 +859,6 @@
     const screenHdr = !!(window.matchMedia && matchMedia('(dynamic-range: high)').matches);
     const playTag = tag(vw, vh);
     const early = m.playingFor < 60;
-    const hints = [];
 
     // Picture: against the best version this browser says it can play in the video's own list, else the service's published cap.
     let pic, topVs = null, topV = null, topPlay = null, count = 0;
@@ -849,7 +877,6 @@
     else pic = 'unknown';
     const sizeBest = ['top', 'topsize', 'topplayable', 'atcap'].includes(pic);
     const bestHere = topPlay ? tag(topPlay[0].w, topPlay[0].h) : cap === 'HD' ? '720p' : cap || playTag;
-    const elsewhere = svc && svc.best && rankOf(svc.best) > rankOf(bestHere) ? svc : null;
     // HDR: a version at this size the browser says it can play, while SDR plays on an HDR screen.
     const hdrHere = ladder ? ladder.variants.filter((v) => v.range && near(v, vw, vh)) : [];
     const hdrPlayable = hdrHere.filter((v) => canPlayVideo(v.codecs, v.mime) !== false);
@@ -873,102 +900,29 @@
     const BA = bestA ? (pA && audioShort(pA) === audioShort(bestA) ? audioLong(bestA) : audioShort(bestA)) : '';
     const surroundAny = [pA, bestA].some((a) => a && (a.joc || (a.ch && a.ch.n > 2)));
 
-    // ---- headline: status, title, the lines that explain it, and what to do
-    let status, title;
-    const lines = [];
-    const capLine = () => (cap === 'HD' ? playTag + ': within “HD”, ' + site + '’s most for ' + B + '.' : playTag + ': ' + site + '’s most for ' + B + '.');
-    const topLine = () => {
-      const more = elsewhere ? '' : svc && svc.best ? ' Nothing higher published.' : ' Apps’ best unknown.';
-      return playTag + ': ' + (count === 1 ? 'only version' : 'top of ' + count + ' versions') + ' sent.' + more;
-    };
-    if (pic === 'lower') {
-      status = 'lower';
-      title = early ? 'Picture not best yet' : 'Picture below best';
-      lines.push('Playing ' + playTag + '; list goes to ' + tag(topPlay[0].w, topPlay[0].h) + '.');
-      if (early) lines.push('Players start low; give it a minute.');
-    } else if (pic === 'belowcap') {
-      status = 'lower';
-      title = early ? 'Picture not best yet' : 'Below ' + site + '’s ' + cap + ' for ' + B;
-      lines.push('Playing ' + playTag + '; up to ' + cap + ' if title and plan allow.');
-      if (early) lines.push('Players start low; give it a minute.');
-      else hints.push('Stuck here? Title or plan may lack ' + cap + '; else check connection and playback setting.');
-    } else if (pic === 'unknown') {
-      status = 'unknown';
-      title = 'Picture unconfirmed';
-      lines.push(
-        {
-          none: 'No quality list seen.',
-          ambiguous: 'Its quality lists disagree on the best.',
-          nomatch: 'Its quality list lacks ' + vw + '×' + vh + '.',
-          unconfirmed: 'No list confirmed as this video’s.',
-        }[found ? found.state : 'none']
-      );
-    } else if (missingHdr) {
-      status = 'lower';
-      title = 'Best size, not HDR';
-      lines.push('SDR playing; ' + B + ' can play the listed ' + hdrPlayable[0].range + '.');
-    } else if (snd === 'lower' && canBest) {
-      status = 'lower';
-      title = 'Best picture, weaker sound';
-      lines.push(pic === 'atcap' ? capLine() : topLine());
-    } else if (pic === 'topplayable') {
-      status = 'elsewhere';
-      title = 'Best ' + B + ' can play';
-      lines.push(tag(topV.w, topV.h) + ' is ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + '; ' + B + ' can’t play it.');
-    } else if (elsewhere) {
-      status = 'elsewhere';
-      title = 'Best for ' + B;
-      lines.push(pic === 'atcap' ? capLine() : topLine());
-    } else {
-      status = 'best';
-      title = pic === 'topsize' ? 'Top size the site offers' : pic === 'atcap' ? 'Best ' + site + ' sends ' + B : 'Best the site offers';
-      lines.push(pic === 'atcap' ? capLine() : topLine());
-      if (pic === 'topsize') lines.push('Several bitrates at that size; can’t tell which.');
-    }
-    // The service's best anywhere, not a promise for this title.
-    if (elsewhere) lines.push('Elsewhere: ' + elsewhere.best + ', ' + elsewhere.where + '; not every title.');
-    lines.push(
-      'Sound: ' +
-        {
-          none: 'this video has no sound track.',
-          best: pA && audioShort(pA) + ', best listed.',
-          cant: pA && audioShort(pA) + '; listed ' + BA + ' won’t play in ' + B + '.',
-          lower: pA && audioShort(pA) + '; ' + BA + ' listed' + (canBest ? ', playable' + (surroundAny ? ' (stereo output folds it)' : '') + '.' : '.'),
-          known: pA && audioShort(pA) + '.',
-          unknown: sCap
-            ? sCapText + ', ' + site + '’s most for ' + B + (ss.best ? '; ' + ss.best + ' elsewhere' : '') + '.'
-            : 'track not reported' + (BA ? '; up to ' + BA + ' listed.' : ss && ss.best ? '; ' + ss.best + ' elsewhere.' : '.'),
-        }[snd]
-    );
-    if (snd === 'lower' && canBest) hints.push('Pick ' + BA + ' in the player’s audio menu, if any.');
-    if (pic === 'lower') {
-      if (shown && shown.w < topPlay[0].w * 0.9) hints.push('Small on screen (' + shown.w + '×' + shown.h + '), so the player may pick lower. Try full screen.');
-      if (!early) hints.push('Still low? Check quality setting (Prime: ⚙ → Video quality → Best) and connection.');
-    }
-
     // ---- Picture
     const pictureRows = [];
     const playJ = {
       top: ['normal', ''],
       topsize: ['normal', ''],
       topplayable: ['normal', 'best ' + B + ' can play'],
-      lower: early ? ['note', 'players start low; give it a minute'] : ['unusual', 'list goes to ' + (topPlay ? tag(topPlay[0].w, topPlay[0].h) : '')],
-      atcap: ['normal', cap === 'HD' ? '“HD” is ' + site + '’s word; no number' : ''],
+      lower: early ? ['note', 'players start low; give it a minute'] : ['unusual', S + '’s stream list goes to ' + (topPlay ? tag(topPlay[0].w, topPlay[0].h) : '')],
+      atcap: ['normal', cap === 'HD' ? '“HD” is ' + S + '’s word; no number' : ''],
       belowcap: early ? ['note', 'players start low; give it a minute'] : ['note', 'up to ' + cap + ' if title and plan allow'],
-      unknown: ['note', found ? 'no confirmed list' : 'no list seen'],
+      unknown: ['note', found ? 'no confirmed stream list' : 'no stream list seen'],
     }[pic];
     pictureRows.push(['Playing', sizeName(vw, vh) + (codec ? ', ' + codec : ''), ...playJ]);
     if (ladder) {
       const ranges = uniq(ladder.variants.map((v) => v.range));
       pictureRows.push([
-        'Site’s best',
+        'Top sent',
         topV.w + '×' + topV.h + ', ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + (rangeOf(topVs) ? ', ' + rangeOf(topVs) : ''),
         '',
         count + (count === 1 ? ' version, ' : ' versions, ') + (ranges.length ? 'with ' + ranges.join(' and ') : 'all SDR') + ' (' + ladder.kind + (ladder.part ? ', ' + ladder.part : '') + '); matched to ' + found.how,
       ]);
     } else if (found) {
       const tops = uniq(ladders.map((L) => tag(topOf(L)[0].w, topOf(L)[0].h)));
-      pictureRows.push(['Lists seen', ladders.length + ' (best in them: ' + tops.join(', ') + ')', 'note', { ambiguous: 'disagree on the best', nomatch: 'video’s list lacks its size', unconfirmed: 'none confirmed as video’s' }[found.state]]);
+      pictureRows.push(['Stream lists', ladders.length + ' (best in them: ' + tops.join(', ') + ')', 'note', { ambiguous: 'disagree on the best', nomatch: 'video’s stream list lacks its size', unconfirmed: 'none confirmed as video’s' }[found.state]]);
     }
     if (svc) pictureRows.push(serviceRow(svc, b, cap));
     let colJ;
@@ -980,7 +934,7 @@
     else if (hdrHere.length) colJ = ['normal', 'listed HDR needs a codec ' + B + ' lacks'];
     else if (ladder && ladder.variants.some((v) => v.range)) colJ = ['normal', 'listed HDR is other sizes'];
     else if (ladder) colJ = ['normal', 'no HDR listed' + (screenHdr ? '' : '; screen is SDR only')];
-    else colJ = ['note', 'no list to check'];
+    else colJ = ['note', 'no stream list to check'];
     pictureRows.push(['Colour', playingRange || 'not reported', ...colJ]);
     const listed = exact.length === 1 ? exact : playing;
     if (listed.length && rangeOf(listed)) {
@@ -994,7 +948,7 @@
       const k = shown.h / vh;
       pictureRows.push([
         'On screen',
-        shown.w + '×' + shown.h + ' px' + (k > 1.05 ? ', enlarged ' + k.toFixed(1) + '×' : k < 0.95 ? ', shrunk' : ', pixel for pixel'),
+        shown.w + '×' + shown.h + ' px' + (k > 1.05 ? ', enlarged ' + k.toFixed(1) + '×' : k < 0.95 ? ', shrunk' : ', about original size'),
         ...(k <= 1.05 ? ['normal', 'full detail'] : sizeBest ? ['normal', 'screen finer than stream'] : k >= 1.3 ? ['note', 'softer than native'] : ['normal', '']),
       ]);
     }
@@ -1012,9 +966,9 @@
         known: surround || !pA.bps || pA.bps >= 96000 ? ['normal', surround ? 'surround' : pA.bps ? 'typical streaming sound' : ''] : ['note', 'low for film sound'],
       }[snd];
       soundRows.push(['Playing', audioLong(pA) + (measuredA ? ', ' + measuredA + ' measured' : ''), ...j]);
-    } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'codec and channels not reported']);
-    if (ss) soundRows.push([site, sCap ? sCapText + ' in ' + B : 'no published limit for ' + B, '', ss.best ? 'best anywhere: ' + ss.best : 'doesn’t publish its best sound']);
-    if (bestA && snd !== 'best') soundRows.push(['Site’s best', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest ? B + ' can play it' : '']);
+    } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'format and channels not reported']);
+    if (ss) soundRows.push([S, sCap ? sCapText + ' in ' + B : 'limit for ' + B + ': unknown', '', ss.best ? 'best anywhere: ' + ss.best : 'best sound anywhere: unknown']);
+    if (bestA && snd !== 'best') soundRows.push(['Top sent', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest ? B + ' can play it' : '']);
     if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'after the browser; both on = processed twice']);
     else soundRows.push(['After this', 'Movie Sound, if on', '', 'after the browser' + (surroundAny ? ', on stereo (surround folded)' : '') + '; not seen here']);
 
@@ -1042,12 +996,17 @@
       const j = ft.unknown ? ['note', ft.why] : !ft.even ? ['unusual', 'slow pans can judder'] : ft.skipped ? ['note', 'some skipped lately'] : ['normal', 'equal frame times'];
       playbackRows.push(['Smoothness', ft.value, ...j]);
     } else if (!video.paused && !video.requestVideoFrameCallback) playbackRows.push(['Smoothness', 'not reported', 'note', 'frame timing not reported']);
+    else playbackRows.push(['Smoothness', 'measuring…', '', '']);
+    let d = 0, t = 0, p = 0, n = 0, when = '';
     if (m.q) {
-      const t = m.q.totalVideoFrames, d = m.q.droppedVideoFrames, pct = t ? (100 * d) / t : 0;
+      t = m.q.totalVideoFrames;
+      d = m.q.droppedVideoFrames;
+      const pct = t ? (100 * d) / t : 0;
       // Judged on the last minute, so one hiccup (a seek, a busy moment) doesn't mark the rest of the film.
       const first = drops[0], last = drops[drops.length - 1];
       const rt = first && last ? last.total - first.total : 0, rd = first && last ? last.dropped - first.dropped : 0;
-      const [n, p, when] = rt >= 240 ? [rt, (100 * rd) / rt, 'last minute: '] : [t, pct, ''];
+      if (rt >= 240) (n = rt), (p = (100 * rd) / rt), (when = 'last minute: ');
+      else (n = t), (p = pct), (when = '');
       const j = n < 240 ? ['note', 'too early to judge'] : p < 0.5 ? ['normal', when + 'under 0.5%'] : p <= 2 ? ['note', when + p.toFixed(1) + '%; fine unless it grows'] : ['unusual', when + p.toFixed(1) + '%: expect stutter'];
       playbackRows.push(['Dropped', d + ' of ' + t.toLocaleString() + ' frames' + (t ? ' (' + pct.toFixed(pct && pct < 0.1 ? 2 : 1) + '%)' : ''), ...j]);
     }
@@ -1056,11 +1015,188 @@
     playbackRows.push(['Buffered', Math.round(ahead) + ' s ahead', ...(low ? (early ? ['note', 'low; still filling'] : ['unusual', 'low; may stall']) : ['normal', ''])]);
     playbackRows.push(['Source', sourceKind(video), '', '']);
 
+    // ---- three scorecard rows (Picture, Sound, Playback)
+    const pcPic = svc && svc.pc && svc.pc.picture;
+    const pcSnd = svc && svc.pc && svc.pc.sound;
+    const pcRank = pcPic ? (pcPic.best === 'HD' ? RANK['1080p'] : rankOf(pcPic.best)) : 0;
+    const hdUnconfirmed = pic === 'atcap' && cap === 'HD' && rankOf(playTag) < RANK['1080p'];
+    const singleRange = playingRange && !/ or /.test(playingRange) ? playingRange.replace(' (PQ)', '') : '';
+    const pv = playTag + (singleRange ? ' ' + singleRange : '');
+    const topTag = topPlay ? tag(topPlay[0].w, topPlay[0].h) : '';
+    const aS = pA ? audioShort(pA) : '';
+    let picNow;
+    if (pic === 'top' || pic === 'topsize') picNow = pv + ' · ' + (count === 1 ? 'only version sent to ' + B : 'top of ' + count + ' sent to ' + B);
+    else if (pic === 'topplayable') picNow = pv + ' · top ' + B + ' can play; ' + tag(topV.w, topV.h) + ' sent needs ' + uniq(topVs.map((v) => codecName(v.codecs))).join(' / ') + ', which ' + B + ' can’t play';
+    else if (pic === 'lower') picNow = pv + ' · ' + S + ' sent ' + B + ' up to ' + topTag;
+    else if (pic === 'atcap') picNow = (cap === 'HD' ? pv + ' · within “HD”, ' : pv + ' · ') + S + '’s most for ' + B;
+    else if (pic === 'belowcap') picNow = pv + ' · ' + S + ' offers ' + B + ' up to ' + cap;
+    else {
+      picNow = pv + ' · ' + ({
+        none: 'no stream list seen',
+        ambiguous: S + '’s stream lists disagree',
+        nomatch: S + '’s stream list lacks ' + vw + '×' + vh,
+        unconfirmed: 'no stream list confirmed as this video’s',
+      }[found ? found.state : 'none']);
+    }
+    if (missingHdr) picNow = pv + ' · ' + hdrPlayable[0].range + ' sent at this size; ' + B + ' can play it';
+    if (hdUnconfirmed) picNow = pv + ' · within ' + S + '’s “HD”; its top size isn’t published';
+    let picMark, picKind = '';
+    const picSteps = [];
+    const macRoute = !!(pcPic && pcPic.mac && pcPic.mac !== 'any' && pcPic.mac !== b && pcRank > Math.max(rankOf(playTag), rankOf(bestHere)) && (!capRank || capRank < pcRank));
+    if (hdUnconfirmed) picMark = 'unk';
+    else if (missingHdr) (picMark = 'gap'), (picKind = 'hdr');
+    else if (pic === 'lower') {
+      picMark = early ? 'try' : 'gap';
+      picKind = early ? 'lower-early' : 'lower';
+      if (!early) {
+        if (shown && topPlay && shown.w < topPlay[0].w * 0.9) picSteps.push('Try full screen; at ' + shown.w + '×' + shown.h + ' the player may pick lower.');
+        picSteps.push(svc && svc.name === 'Prime Video' ? 'Check the player’s quality setting (⚙ › Video quality › Best) and your connection.' : 'Check the player’s quality setting and your connection.');
+      }
+    } else if (macRoute) (picMark = 'gap'), (picKind = 'mac');
+    else if (pic === 'belowcap') {
+      picMark = 'try';
+      picKind = 'belowcap';
+      if (!early) picSteps.push('Check your plan, the player’s quality setting and your connection.');
+    } else if (pic === 'unknown') picMark = 'unk';
+    else if (pcPic && pcPic.complete && rankOf(playTag) >= pcRank && (!/HDR|Dolby Vision/.test(pcPic.best) || isHdr)) picMark = 'ok';
+    else picMark = 'top';
+
+    let sndNow, sndCmp = '', sndMark, sndKind = '';
+    const sndSteps = [];
+    if (snd === 'none') sndNow = 'No sound track';
+    else if (snd === 'best') sndNow = aS + ' · ' + (pool.length === 1 ? 'only track sent to ' + B : 'top track sent to ' + B);
+    else if (snd === 'known') sndNow = aS;
+    else if (snd === 'lower') sndNow = aS + ' · ' + BA + ' also sent' + (canBest === true ? '; ' + B + ' can play it' : canBest === false ? '; ' + B + ' can’t play it' : '');
+    else if (snd === 'cant') sndNow = aS + ' · ' + BA + ' also sent; ' + B + ' can’t play it';
+    else sndNow = 'Not reported by ' + B + (BA ? ' · up to ' + BA + ' sent' : '');
+    if (snd === 'none') sndMark = '';
+    else {
+      sndCmp = pcSnd ? pcSnd.cmp : 'Computer best: unknown';
+      if (snd === 'lower' && canBest) (sndMark = 'gap'), (sndKind = 'lower'), sndSteps.push('Pick ' + BA + ' in the player’s audio menu, if it has one.');
+      else if (snd === 'unknown') sndMark = 'unk';
+      else if (pcSnd && pcSnd.complete && soundRank(pA) >= soundRank(pcSnd.best)) sndMark = 'ok';
+      else sndMark = 'top';
+    }
+
+    const limited = b === 'safari' && hz && hz <= 61;
+    const dropBad = n >= 240 && p > 2;
+    const bufLow = low && !early;
+    const uneven = ft && !ft.unknown && !ft.even;
+    const hzPart = hz ? 'Page at ' + hz + ' Hz' : '';
+    const framePart = ft && ft.unknown ? 'Film frame timing: not reported by ' + B : ft ? (ft.even ? 'even frame timing' : 'uneven frame timing') : '';
+    const dropsPart = m.q ? d + ' of ' + t.toLocaleString() + ' frames dropped' : '';
+    const joinBits = (xs) => xs.filter(Boolean).join(' · ');
+    let pbNow, pbCmp = '', pbMark, pbKind = '';
+    const pbSteps = [];
+    if (dropBad) {
+      pbMark = 'gap';
+      pbKind = 'drop';
+      pbNow = 'Dropping frames: ' + p.toFixed(1) + '% ' + (when ? 'in the last minute' : 'so far');
+      pbCmp = joinBits([hzPart, dropsPart]);
+    } else if (bufLow) {
+      pbMark = 'gap';
+      pbKind = 'buf';
+      pbNow = 'Buffer low: ' + Math.round(ahead) + ' s ahead; may stall';
+      pbCmp = joinBits([hzPart, dropsPart]);
+    } else if (uneven) {
+      pbMark = 'gap';
+      pbKind = 'uneven';
+      pbNow = 'Uneven frame timing; slow pans can judder';
+      pbCmp = joinBits([hzPart, dropsPart]);
+    } else if (limited) {
+      pbMark = 'try';
+      pbKind = 'limited';
+      pbNow = 'Page at ' + hz + ' Hz; on a 120 Hz screen a Safari setting may hold it back';
+      pbCmp = joinBits([framePart, dropsPart]);
+      pbSteps.push('Safari › Settings › Advanced › tick “Show features for web developers”', 'Develop › Feature Flags… › untick “Prefer Page Rendering Updates near 60fps”, then reload this page');
+    } else if (ft && !ft.unknown && ft.even && hz) {
+      pbMark = 'ok';
+      pbNow = 'Even frame timing at ' + hz + ' Hz';
+      pbCmp = dropsPart;
+    } else if (hz || m.q) {
+      pbMark = 'top';
+      pbNow = joinBits([hzPart, dropsPart]);
+    } else {
+      pbMark = 'unk';
+      pbNow = 'Not measured yet';
+    }
+
+    let rows = [
+      { part: 'Picture', mark: picMark, now: picNow, cmp: pcPic ? pcPic.cmp : 'Computer best: unknown', steps: picSteps, kind: picKind },
+      { part: 'Sound', mark: sndMark, now: sndNow, cmp: sndCmp, steps: sndSteps, kind: sndKind },
+      { part: 'Playback', mark: pbMark, now: pbNow, cmp: pbCmp, steps: pbSteps, kind: pbKind },
+    ].map((row, i) => ((row.i = i), row));
+    const tier = (mark) => (mark === 'gap' ? 0 : mark === 'try' ? 1 : 2);
+    rows.sort((a, b) => tier(a.mark) - tier(b.mark) || a.i - b.i);
+    const noPc = !pcPic && !pcSnd;
+    if (noPc) for (const row of rows) if (row.cmp === 'Computer best: unknown') row.cmp = '';
+    const lead = rows[0].mark === 'gap' || rows[0].mark === 'try' ? rows[0] : null;
+    let title, sub, pill, dot;
+    if (lead && lead.part === 'Picture' && lead.kind === 'hdr') {
+      title = 'HDR sent, SDR playing';
+      sub = S + ' sent ' + hdrPlayable[0].range + ' at this size, and ' + B + ' can play it. Check the player’s settings for HDR, if it has any.';
+    } else if (lead && lead.part === 'Picture' && lead.kind === 'lower-early') {
+      title = 'Picture not at top yet';
+      sub = 'Playing ' + playTag + '; ' + S + ' sent ' + B + ' up to ' + topTag + '. Players start low; give it a minute.';
+    } else if (lead && lead.part === 'Picture' && lead.kind === 'lower') {
+      title = 'Picture below ' + topTag;
+      sub = 'Playing ' + playTag + '; ' + S + ' sent ' + B + ' up to ' + topTag + '.';
+    } else if (lead && lead.part === 'Picture' && lead.kind === 'mac') {
+      const sizeWord = (/\b(4K|\d{3,4}p|HD)\b/.exec(pcPic.best) || [])[1] || pcPic.best;
+      title = 'Up to ' + sizeWord + ' in ' + pcPic.macName;
+      sub = cap ? S + ' caps ' + B + ' at ' + cap + '. Open this film in ' + pcPic.macName + '.' : S + ' offers up to ' + pcPic.best + ' in ' + pcPic.macName + ' on a Mac. Open this film in ' + pcPic.macName + '.';
+    } else if (lead && lead.part === 'Picture' && lead.kind === 'belowcap') {
+      title = cap + ' possible in ' + B;
+      sub = 'Playing ' + playTag + '; ' + S + ' offers ' + B + ' up to ' + cap + ' if the film and plan allow.' + (early ? ' Players start low; give it a minute.' : '');
+    } else if (lead && lead.part === 'Sound' && lead.kind === 'lower') {
+      title = 'Better sound sent';
+      sub = 'Playing ' + aS + '; ' + S + ' also sent ' + BA + ', which ' + B + ' can play.';
+    } else if (lead && lead.part === 'Playback' && lead.kind === 'drop') {
+      title = 'Dropping frames';
+      sub = p.toFixed(1) + '% of frames dropped ' + (when ? 'in the last minute' : 'so far') + '; expect stutter.';
+    } else if (lead && lead.part === 'Playback' && lead.kind === 'buf') {
+      title = 'Buffer running low';
+      sub = 'Only ' + Math.round(ahead) + ' s buffered ahead; playback may stall. Check your connection.';
+    } else if (lead && lead.part === 'Playback' && lead.kind === 'uneven') {
+      title = 'Uneven frame timing';
+      sub = 'Frames stay on screen for unequal times (' + ((ft.value.match(/uneven: (.+?) ms/) || [, ''])[1]) + ' ms); slow pans can judder.';
+    } else if (lead && lead.part === 'Playback' && lead.kind === 'limited') {
+      title = 'Safari page at ' + hz + ' Hz';
+      sub = 'Worth trying a Safari setting; steps below.';
+    } else if (rows.every((row) => row.mark === 'ok')) {
+      title = 'Nothing to change';
+      sub = 'Matches the best ' + S + ' publishes for any computer.';
+      pill = 'Best for any computer';
+      dot = 'ok';
+    } else if (rows.find((row) => row.part === 'Picture').mark === 'unk') {
+      title = 'Picture unconfirmed';
+      sub = hdUnconfirmed ? 'Nothing better found, but ' + S + ' gives no number for its “HD”.' : 'Nothing better found, but the picture can’t be checked against ' + S + '’s stream list.';
+      pill = 'Picture unconfirmed';
+      dot = 'unk';
+    } else {
+      title = 'Nothing to change';
+      sub = 'Nothing better found for this Mac.';
+      pill = 'Nothing to change';
+      dot = 'top';
+    }
+    if (lead) (pill = title), (dot = lead.mark);
+    const quiet = [];
+    if (noPc) quiet.push(['Computer best:', svc ? 'unknown for ' + S + '.' : 'not on file for ' + S + '.']);
+    if (svc && svc.off) quiet.push(['Not on this Mac:', svc.off + '.']);
+    if (svc && svc.tv) quiet.push(['Published for TV apps:', svc.tv + '.']);
+    const cant = [];
+    if (ft && ft.unknown) cant.push('film frame timing (' + B + ' doesn’t report it)');
+    cant.push('Movie Sound (it works after the browser)');
+    quiet.push(['Can’t tell:', cant.join('; ')]);
+
     return {
-      status,
       title,
-      lines,
-      hints: hints.slice(0, 2),
+      sub,
+      pill,
+      dot,
+      kicker: S + ' · ' + B,
+      rows,
+      quiet,
       sections: [
         { name: 'Picture', rows: pictureRows },
         { name: 'Sound', rows: soundRows },
@@ -1071,110 +1207,204 @@
 
   // ---------- the panel ----------
 
-  let host = null, body = null, timer = null;
+  let host = null, timer = null, panelOpen = false, pillOn = false;
+  let lastInput = performance.now(), idleTimer = null;
 
-  // Panel styles and markup. Hints (what to do) sit in the verdict block, so a short window never cuts them off.
-  // Report shape: { status, title, lines, hints, sections: [{ name, rows: [[label, value, level, why]] }] }; level normal | unusual | note | '' (a plain fact).
+  // F2 compact scorecard. The button, details and summary are built once so focus and the open state survive each render.
   const PANEL_CSS =
-    ':host{all:initial;position:fixed;top:12px;right:12px;z-index:2147483647;pointer-events:none}' +
-    '.p{box-sizing:border-box;width:420px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:hidden;padding:12px 14px 9px;border-radius:12px;' +
-    'background:rgba(26,23,20,.86);-webkit-backdrop-filter:blur(18px) saturate(1.15);backdrop-filter:blur(18px) saturate(1.15);' +
+    ':host{all:initial;position:fixed;top:12px;right:12px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}' +
+    '.pill{appearance:none;-webkit-appearance:none;box-sizing:border-box;min-width:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#EEE9E0;display:flex;align-items:center;justify-content:flex-end;cursor:pointer;transition:opacity .4s}' +
+    '.pill[hidden]{display:none}' +
+    '.pill:focus{outline:none}.pill:focus-visible{outline:2px solid #9CC3F5;outline-offset:2px}' +
+    '.pv{display:flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 9px;border-radius:15px;background:rgba(26,23,20,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(238,233,224,.18);font:600 12.5px/1 "Avenir Next",system-ui,sans-serif;color:#EEE9E0;box-shadow:0 4px 14px rgba(0,0,0,.35)}' +
+    '.dot{width:9px;height:9px;border-radius:50%;box-sizing:border-box;flex:none}' +
+    '.dot.gap{background:#F0A94B}.dot.try{background:transparent;border:2px solid #F0A94B}.dot.ok{background:#86D39F}.dot.unk{background:transparent;border:1.5px solid #CFC8BC}.dot.top{background:#CFC8BC}' +
+    '.pill,.pill *{pointer-events:auto}' +
+    ':host(.idle) .pill{opacity:0}:host(.idle) .pill,:host(.idle) .pill *{pointer-events:none}' +
+    '.p{box-sizing:border-box;width:404px;max-width:calc(100vw - 24px);max-height:calc(100vh - 80px);overflow:hidden;padding:13px 15px 11px;border-radius:13px;' +
+    'background:rgba(26,23,20,.88);-webkit-backdrop-filter:blur(18px) saturate(1.15);backdrop-filter:blur(18px) saturate(1.15);' +
     'border:1px solid rgba(238,233,224,.13);box-shadow:0 12px 32px rgba(0,0,0,.42);' +
-    'color:#EEE9E0;font:12px/1.4 -apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}' +
-    '.top{position:relative;padding-right:22px;margin-bottom:2px}' +
-    // The status mark sits where a projectionist's reel-change cue mark appears: the frame's top right corner.
-    '.cue{position:absolute;top:3px;right:0;width:14px;height:14px;border-radius:50%;box-sizing:border-box;box-shadow:0 0 0 1px rgba(0,0,0,.35)}' +
-    '.cue.best{background:radial-gradient(circle at 38% 36%,#d8f5df 0,#86d39f 45%,#4f9c6b 100%)}' +
-    '.cue.elsewhere{background:radial-gradient(circle at 38% 36%,#e3efff 0,#9cc3f5 45%,#5b86c0 100%)}' +
-    '.cue.lower{background:radial-gradient(circle at 38% 36%,#ffe6bf 0,#f0a94b 45%,#b9752a 100%)}' +
-    '.cue.unknown,.cue.wait{border:2px solid #CFC8BC}' +
-    '.t{font:600 17px/1.22 "Avenir Next",-apple-system,system-ui,sans-serif;letter-spacing:-.005em;margin-bottom:3px}' +
-    '.l{font:500 12.5px/1.38 "Avenir Next",-apple-system,system-ui,sans-serif;color:#D8D2C7}' +
-    '.l+.l{margin-top:1px}' +
-    '.sec{display:flex;align-items:center;gap:8px;margin:9px 0 2px;font:600 12px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#B4AEA4;letter-spacing:.01em}' +
-    '.sec::after{content:"";flex:1;height:1px;background:rgba(238,233,224,.12)}' +
-    '.row{display:grid;grid-template-columns:68px 1fr 48px;column-gap:10px;padding:2px 0}' +
-    '.k{font:500 12px/1.4 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#A39D93}' +
-    '.v{min-width:0;overflow-wrap:anywhere}' +
-    '.why{color:#A39D93;font-size:11px;line-height:1.33;margin-left:7px}' +
-    '.j{font:500 11.5px/1.45 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#7F796F;text-align:right}' +
-    '.j.unusual{color:#F0A94B;font-weight:600}.j.note{color:#D6CEC1}' +
-    '.n{margin-top:6px;padding-left:9px;border-left:2px solid rgba(240,169,75,.6);color:#EEE9E0;font:500 12px/1.38 "Avenir Next",-apple-system,system-ui,sans-serif}' +
+    'color:#EEE9E0;font:12.5px/1.42 "Avenir Next",-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}' +
+    '.p,.p *{pointer-events:none}.p summary,.p summary *{pointer-events:auto;cursor:pointer}' +
+    '.p:has(details[open]){pointer-events:auto;overflow:auto}.p:has(details[open]),.p:has(details[open]) *{pointer-events:auto}' +
+    '.kick{font:600 11px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#A39D93;margin-bottom:5px}' +
+    '.t{font:600 18px/1.22 "Avenir Next",system-ui,sans-serif;letter-spacing:-.005em}' +
+    '.sub{color:#D8D2C7;margin-top:3px}' +
+    '.rows{margin-top:8px}' +
+    '.r2{display:grid;grid-template-columns:20px 58px 1fr;column-gap:7px;padding:6px 0;border-top:1px solid rgba(238,233,224,.12);align-items:start}' +
+    '.r2 .k{font:600 12px/1.45 "Avenir Next",system-ui,sans-serif;color:#D8D2C7}' +
+    '.r2 .v{color:#EEE9E0;min-width:0;overflow-wrap:anywhere}' +
+    '.r2 .cmp{display:block;color:#A39D93;font-size:11.5px}' +
+    '.m{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font:700 11px/1 -apple-system,system-ui,sans-serif;flex:none}' +
+    '.m.gap{background:#F0A94B;color:#2a1a06;font-size:9px}' +
+    '.m.try{color:#F0A94B;box-shadow:inset 0 0 0 1.5px #F0A94B;font-size:10px}' +
+    '.m.top{color:#CFC8BC;background:rgba(238,233,224,.08)}' +
+    '.m.ok{background:rgba(134,211,159,.18);color:#86D39F;box-shadow:inset 0 0 0 1.5px rgba(134,211,159,.6)}' +
+    '.m.unk{color:#CFC8BC;box-shadow:inset 0 0 0 1.5px rgba(207,200,188,.6)}' +
+    '.steps{margin:6px 0 2px;padding-left:20px;color:#EEE9E0;font-size:12px}.steps li{margin:2px 0}' +
+    '.steps.s2{font-size:11.5px;color:#D8D2C7;margin-top:4px}' +
+    '.quiet{color:#A39D93;font-size:11.5px;line-height:1.4}.quiet b{color:#C9C2B6;font-weight:600}' +
+    '.q2{margin-top:9px;padding-top:7px;border-top:1px solid rgba(238,233,224,.12)}' +
+    '.more{margin-top:10px;font:600 12px/1 "Avenir Next",system-ui,sans-serif;color:#D8D2C7}' +
+    '.det{margin-top:8px;padding-top:6px;border-top:1px solid rgba(238,233,224,.12)}' +
+    '.legend{color:#A39D93;font-size:11.5px;font-weight:500;margin-bottom:6px}' +
+    '.det .sec{display:flex;align-items:center;gap:8px;margin:9px 0 2px;font:600 12px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#B4AEA4;letter-spacing:.01em}' +
+    '.det .sec::after{content:"";flex:1;height:1px;background:rgba(238,233,224,.12)}' +
+    '.det .row{display:grid;grid-template-columns:68px 1fr 48px;column-gap:10px;padding:2px 0}' +
+    '.det .k{font:500 12px/1.4 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#A39D93}' +
+    '.det .v{min-width:0;overflow-wrap:anywhere}' +
+    '.det .why{color:#A39D93;font-size:11px;line-height:1.33;margin-left:7px}' +
+    '.det .j{font:500 11.5px/1.45 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#7F796F;text-align:right}' +
+    '.det .j.unusual{color:#F0A94B;font-weight:600}.det .j.note{color:#D6CEC1}' +
     '.f{margin-top:9px;font:500 11px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#7F796F}';
 
+  const MARK = {
+    gap: ['\u25b2', 'Better on this Mac'],
+    try: ['\u25c7', 'Worth trying'],
+    top: ['\u2013', 'Top sent'],
+    ok: ['\u2713', 'Computer best'],
+    unk: ['?', 'Unknown'],
+  };
   const LEVEL_WORD = { normal: 'Normal', unusual: 'Unusual', note: 'Note' };
   const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-  function panelHtml(r) {
+  function headHtml(r) {
+    if (r.wait || !r.rows) return '<div class="t">' + escHtml(r.title) + '</div>' + (r.sub ? '<div class="sub">' + escHtml(r.sub) + '</div>' : '');
+    const one = (row) => {
+      const m = MARK[row.mark];
+      const mark = m ? '<span class="m ' + row.mark + '" title="' + escHtml(m[1]) + '" aria-label="' + escHtml(m[1]) + '">' + m[0] + '</span>' : '<span></span>';
+      const steps = row.steps && row.steps.length ? '<ol class="steps s2">' + row.steps.map((s) => '<li>' + escHtml(s) + '</li>').join('') + '</ol>' : '';
+      return '<div class="r2">' + mark + '<span class="k">' + escHtml(row.part) + '</span><span class="v">' + escHtml(row.now) + (row.cmp ? '<span class="cmp">' + escHtml(row.cmp) + '</span>' : '') + steps + '</span></div>';
+    };
+    const quiet = r.quiet && r.quiet.length ? '<div class="quiet q2">' + r.quiet.map(([k, v]) => '<div><b>' + escHtml(k) + '</b> ' + escHtml(v) + '</div>').join('') + '</div>' : '';
+    return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="t">' + escHtml(r.title) + '</div><div class="sub">' + escHtml(r.sub || '') + '</div><div class="rows">' + r.rows.map(one).join('') + '</div>' + quiet;
+  }
+
+  function detHtml(r) {
+    const b = browserName();
+    const B = b === 'safari' ? 'Safari' : BROWSER_LABEL[b] || 'this browser';
     const row = ([k, v, lv, why]) =>
       '<div class="row"><div class="k">' + escHtml(k) + '</div><div class="v">' + escHtml(v) +
       (why ? '<span class="why">' + escHtml(why) + '</span>' : '') + '</div><div class="j ' + (lv || '') + '">' + (LEVEL_WORD[lv] || '') + '</div></div>';
-    return (
-      '<div class="top"><span class="cue ' + r.status + '"></span><div class="t">' + escHtml(r.title) + '</div>' +
-      (r.lines || []).map((l) => '<div class="l">' + escHtml(l) + '</div>').join('') +
-      (r.hints || []).map((h) => '<div class="n">' + escHtml(h) + '</div>').join('') + '</div>' +
-      (r.sections || []).filter((s) => s.rows.length).map((s) => '<div class="sec">' + escHtml(s.name) + '</div>' + s.rows.map(row).join('')).join('') +
-      '<div class="f">Control+Shift+H hides</div>'
-    );
+    const sections = (r.sections || []).filter((s) => s.rows && s.rows.length).map((s) => '<div class="sec">' + escHtml(s.name) + '</div>' + s.rows.map(row).join('')).join('');
+    return '<div class="legend">\u25b2 better on this Mac \u00b7 \u25c7 worth trying \u00b7 \u2013 top sent to ' + escHtml(B) + ' \u00b7 \u2713 computer best \u00b7 ? unknown</div>' + sections + '<div class="f">Control+Shift+H also opens and closes this panel.</div>';
   }
 
   function build() {
     host = document.createElement('div');
     host.setAttribute('data-stream-quality-hud', '');
     const root = host.attachShadow({ mode: 'open' });
-    root.innerHTML = '<style>' + PANEL_CSS + '</style><div class="p"></div>';
-    body = root.querySelector('.p');
+    root.innerHTML =
+      '<style>' + PANEL_CSS + '</style>' +
+      '<button class="pill" type="button" aria-expanded="false" aria-controls="p"><span class="pv"><span class="dot"></span><span class="pt"></span></span></button>' +
+      '<div class="p" id="p" hidden><div class="head"></div><details class="more"><summary>Details</summary><div class="det"></div></details></div>';
+    // A mouse click leaves the pill unfocused (Chrome focuses buttons on click), so it can still fade and Space
+    // still reaches the player; Enter or Space on a focused pill keeps the focus there.
+    root.querySelector('.pill').addEventListener('click', (e) => {
+      setPanel(!panelOpen);
+      if (e.detail > 0) e.currentTarget.blur();
+    });
   }
 
+  function pillWanted() {
+    if (!document.querySelector('video')) return false;
+    const video = mainVideo();
+    return !!(video && video.videoWidth > 0 && (currentService() || !isFinite(video.duration) || video.duration >= 600));
+  }
+
+  function leaveHost() {
+    if (host && host.isConnected) host.remove();
+    clearInterval(timer);
+    timer = null;
+    clearTimeout(idleTimer);
+    idleTimer = null;
+    samples.length = 0;
+    drops.length = 0;
+    setTiming(false);
+  }
+
+  function ensureHost() {
+    pillOn = pillWanted();
+    if (!pillOn && !panelOpen) {
+      if (host && host.isConnected) leaveHost();
+      return;
+    }
+    if (!host) build();
+    if (!host.isConnected) {
+      placeHost();
+      setTiming(true);
+      if (!timer) timer = setInterval(() => {
+        ensureHost();
+        if (host && host.isConnected) render();
+      }, 1000);
+    }
+  }
+
+  function updateIdle() {
+    if (!host || !host.isConnected) return;
+    const video = mainVideo();
+    const pill = host.shadowRoot.querySelector('.pill');
+    const focused = !!(pill && host.shadowRoot.activeElement === pill);
+    const hovered = !!(pill && pill.matches(':hover'));
+    if (panelOpen || !video || video.paused || focused || hovered || !pillOn) {
+      host.classList.remove('idle');
+      return;
+    }
+    if (performance.now() - lastInput >= 3000) host.classList.add('idle');
+  }
 
   function render() {
-    if (!host) return;
+    if (!host || !host.isConnected) return;
     placeHost();
+    pillOn = pillWanted();
+    if (!pillOn && !panelOpen) {
+      leaveHost();
+      return;
+    }
     let r;
     try {
       r = report();
     } catch (e) {
-      r = { status: 'unknown', title: 'Couldn’t read the video', lines: [String((e && e.message) || e)], sections: [] };
+      r = { wait: true, title: 'Couldn\u2019t read the video', sub: String((e && e.message) || e), pill: 'Couldn\u2019t read the video', dot: 'unk', sections: [] };
     }
-    body.innerHTML = panelHtml(r);
+    const root = host.shadowRoot;
+    const pill = root.querySelector('.pill');
+    const text = r.pill || r.title || '';
+    pill.hidden = !pillOn;
+    root.querySelector('.pt').textContent = text;
+    root.querySelector('.dot').className = 'dot' + (r.dot ? ' ' + r.dot : '');
+    pill.setAttribute('aria-expanded', panelOpen ? 'true' : 'false');
+    pill.setAttribute('aria-label', 'Stream quality: ' + text + (panelOpen ? '. Hide panel' : '. Show panel'));
+    root.querySelector('.p').hidden = !panelOpen;
+    root.querySelector('.head').innerHTML = headHtml(r);
+    root.querySelector('.det').innerHTML = detHtml(r);
+    updateIdle();
   }
 
-  // In full screen only the full-screen element is drawn, so the panel moves inside it. (When a site
-  // puts the bare <video> itself in full screen, nothing can be drawn over it.)
+  // In full screen only the full-screen element is drawn, so the pill and panel move inside it together.
+  // (When a site puts the bare <video> itself in full screen, nothing can be drawn over it.)
   function placeHost() {
     const fs = document.fullscreenElement || document.webkitFullscreenElement;
     const parent = fs && fs.tagName !== 'VIDEO' ? fs : document.documentElement;
-    if (host.parentNode !== parent) parent.appendChild(host);
+    if (host && host.parentNode !== parent) parent.appendChild(host);
   }
 
-  const isShown = () => !!(host && host.isConnected);
   // The panel lives in the frame that holds the video; a top page without one shows "no video"
   // only when it has no frames that might.
   const wantsPanel = () => !!document.querySelector('video') || (window === window.top && !document.querySelector('iframe, frame'));
 
-  function setShown(show) {
-    if (show && !wantsPanel()) show = false;
-    if (show === isShown()) return;
-    if (!show) {
-      host.remove();
-      clearInterval(timer);
-      timer = null;
-      samples.length = 0;
-      drops.length = 0;
-      setTiming(false);
-      return;
-    }
-    if (!host) build();
-    setTiming(true);
-    render();
-    timer = setInterval(render, 1000);
+  function setPanel(open) {
+    if (open && !wantsPanel()) open = false;
+    panelOpen = !!open;
+    ensureHost();
+    if (host && host.isConnected) render();
   }
 
   // The key toggles this frame's panel directly when it holds the video. Otherwise (a top page whose
   // player is in an iframe) it asks the background, which asks every frame whether a panel is showing
   // and then shows or hides it everywhere, just as the toolbar button does.
   function requestToggle() {
-    const local = () => setShown(!isShown());
+    const local = () => setPanel(!panelOpen);
     if (wantsPanel()) return local();
     try {
       chrome.runtime.sendMessage({ type: 'sqhud-toggle-request' }, (reply) => {
@@ -1185,6 +1415,17 @@
       local();
     }
   }
+
+  function noteInput() {
+    lastInput = performance.now();
+    if (host) host.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = host && host.isConnected ? setTimeout(updateIdle, 3000) : null;
+  }
+  document.addEventListener('pointermove', noteInput, { capture: true, passive: true });
+  document.addEventListener('keydown', noteInput, { capture: true, passive: true });
+  document.addEventListener('fullscreenchange', () => { if (host && host.isConnected) placeHost(); });
+  document.addEventListener('webkitfullscreenchange', () => { if (host && host.isConnected) placeHost(); });
 
   window.addEventListener(
     'keydown',
@@ -1200,9 +1441,22 @@
 
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      if (msg && msg.type === 'sqhud-set') setShown(!!msg.show);
-      if (msg && msg.type === 'sqhud-state' && isShown()) sendResponse({ shown: true });
+      if (msg && msg.type === 'sqhud-set') setPanel(!!msg.show);
+      if (msg && msg.type === 'sqhud-state' && panelOpen) sendResponse({ shown: true });
       return false;
     });
   } catch (e) {}
+
+  // While the pill is not on the page, look every 2 seconds, and as soon as a video has a frame.
+  function probe() {
+    if (host && host.isConnected) return;
+    const video = document.querySelector('video');
+    if (!video) return;
+    if (!pillWanted()) return;
+    ensureHost();
+    if (host && host.isConnected) render();
+  }
+  setInterval(probe, 2000);
+  document.addEventListener('loadeddata', probe, true);
+  document.addEventListener('playing', probe, true);
 })();

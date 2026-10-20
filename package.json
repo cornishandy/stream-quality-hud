@@ -1,8 +1,8 @@
 {
   "name": "stream-quality-hud",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": true,
-  "description": "A small panel over streaming video that says what is really playing and whether it is the best version the site offers.",
+  "description": "A small panel over streaming video that says what is really playing and how it compares with the best the service offers any computer.",
   "author": "cornishandy",
   "license": "MIT",
   "type": "module",

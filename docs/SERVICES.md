@@ -168,3 +168,34 @@ Caps are for browsers on a Mac. "unknown" means the service doesn't publish it. 
   - [u1] <https://help.mubi.com/article/26-are-movies-available-to-watch-in-hd> — “we make our films available in HD and 4K when we can” (checked 2026-10-18)
   - [u2] <https://mubi.com/en/devices> — “Apple TV HD / 4K” (checked 2026-10-18)
   - [u3] <https://help.mubi.com/article/1135-updating-browsers-and-widevine-cdm> — “MUBI supports the newest versions of Chrome, Firefox, Safari and Edge on Mac & PC.” (checked 2026-10-18)
+
+## Best on any computer (19 Oct 2026)
+
+The HUD’s `pc`, `off` and `tv` fields summarise this section. US scope unless stated. Service capabilities, conditional on title and equipment; not guarantees for a film. Unknown = unestablished, not unsupported. Checked 2026-10-19 by GPT-6.1-Sol.
+
+| Service | Best picture on a computer | Best sound on a computer | Native Mac / Windows app |
+|---|---|---|---|
+| Netflix | 2160p; Dolby Vision/HDR10 in Safari on compatible Macs. Edge/Windows app: 2160p HDR. Premium. | Atmos, Edge or Netflix app on compatible Windows computers (Premium). | No / Yes |
+| Prime Video | HD (no number); browsers and both desktop apps. | Stereo; browsers and both desktop apps. | Yes / Yes |
+| Disney+ | 720p browsers; Windows-app ceiling not established. | Stereo browsers; Windows app unknown. | No macOS listing / Edge web app |
+| HBO Max | Website 720p. | Unknown | No macOS listing / unknown |
+| Apple TV+ | 2160p HDR, Mac/Windows TV apps; Safari on a Mac also 4K HDR. | Atmos, native Mac TV app (HDMI passthrough on Apple silicon to an Atmos receiver). Windows unknown. | Yes / Yes |
+| Hulu | 720p website. | Unknown (plans advertise 5.1; computer route unknown). | No macOS listing / web app |
+| Paramount+ | Unknown | Unknown | No Mac app / Windows desktop app |
+| Peacock | Unknown | Unknown | No macOS listing / unknown |
+| AMC+ | Unknown | Unknown | iPad app runs on M1 Macs / unknown |
+| MUBI | Unknown (selected films in 4K; no computer route established). | 5.1, Safari on macOS, selected films. | No macOS listing / unknown |
+| Criterion Channel | Unknown | Unknown | No macOS listing / unknown |
+
+Sources (checked 2026-10-19):
+- Netflix: Mac help https://help.netflix.com/en/node/55764 “Dolby Vision and HDR10”; Windows help https://help.netflix.com/en/node/23931 “using the Edge browser or Netflix app for Windows”; plans https://help.netflix.com/en/node/24926 “Watch in 4K (Ultra HD) + HDR”; Mac-app help https://help.netflix.com/en/node/12983 “available only on the App Store for iPhone, iPad, and Apple TV.”
+- Prime Video: https://www.primevideo.com/help?nodeId=GUX9FYHU5D8LC9EJ&language=en_US “Streaming Video Quality - up to HD”; “Sound quality - Stereo.” (under browsers, Windows app and Mac app)
+- Disney+: https://help.disneyplus.com/in/article/disneyplus-data-usage “computer browsers, which are limited to 720p HD”; “Audio quality: Stereo.” Windows: https://help.disneyplus.com/article/disneyplus-en-bz-uninstall-reinstall “Install this site as an app.”
+- HBO Max: https://help.hbomax.com/us-en/answer/detail/000002521 “The highest resolution supported at HBOMax.com is 720p.”; https://help.hbomax.com/us-en/answer/detail/000002506 “You can stream on your PC, Mac, or Google Chromebook at HBOMax.com.”
+- Apple: https://support.apple.com/guide/tvapp-mac/playback-settings-tvdf855a1b/mac “High Quality (Up to 4K)”; “audio receiver that supports Dolby Atmos”. https://support.apple.com/en-au/guide/tvapp-windows/tvdf855a1b/windows “including HDR video when it’s available.” https://support.apple.com/en-us/119599 “compatible content may play in up to 4K HDR.”
+- Hulu: https://help.hulu.com/article/hulu-video-quality “Hulu.com streams in quality up to 720p.” https://help.hulu.com/article/hulu-watching-hulu-on-site “Chrome web app or Windows 10 app”. https://help.hulu.com/article/hulu-how-much-does-hulu-cost?cmp=11961 “Supports up to 5.1 audio.”
+- Paramount+: https://apps.apple.com/us/app/paramount/id530168168 “iPhone, iPad, Apple Vision, Apple TV.” https://apps.microsoft.com/detail/9wzdncrfj0wk?hl=en-US&gl=US (catalog record lists “Windows.Desktop”).
+- Peacock: https://www.peacocktv.com/help/article/4k-uhd “Only some compatible devices can play 4K Ultra HD content”.
+- AMC+: https://apps.apple.com/us/app/amc-tv-shows-movies/id1578728899?platform=mac “Requires macOS 12.0 or later and a Mac with Apple M1 chip or later.”
+- MUBI: https://help.mubi.com/article/1099-does-mubi-support-5-1-surround-sound-audio “Currently 5.1 is supported on Safari on macOS”.
+- Safari page rate: https://bugs.webkit.org/show_bug.cgi?id=290671#c4 “60Hz by default on ProMotion displays” (includes requestAnimationFrame; unticking “Prefer Page Rendering Updates near 60fps” permits 120 Hz page updates). Effect on video frame presentation: unknown.

@@ -4,14 +4,13 @@ A small panel over streaming video that says what is really playing, and whether
 
 ![The HUD on Netflix in Chrome: 1080p is the most Netflix sends Chrome; Safari gets 4K HDR](screenshots/A-chrome-netflix.png)
 
-Most streaming players never say which version they picked. Chrome often gets a lower tier than Safari on a Mac, and the player's own menu won't tell you. The HUD reads what the browser already knows about the video and the stream list the site sent, then puts it in plain words:
+Most streaming players never say which version they picked. Chrome often gets a lower tier than Safari on a Mac, and the player's own menu won't tell you. The HUD reads what the browser already knows about the video and the stream list the service sent, then puts the conclusion in plain words:
 
-- **A verdict at the top**, with a cue dot in the corner: best this site offers (sage), best this browser gets but better exists elsewhere (blue), not the best yet (amber), or can't confirm (hollow ring).
-- **Picture:** what's playing, the best the site listed, colour (SDR or HDR), bitrate, and whether the screen shows it pixel for pixel.
-- **Sound:** the track playing, the best track on the list and whether this browser can decode it, and the service's published sound limits.
-- **Playback:** frame rate, screen refresh, smoothness (even or uneven frame pacing), dropped frames and buffer.
-
-Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Only exceptions get colour.
+- **A button over the video** states the conclusion. It shows on a known service, or on a video of 10 minutes or more, and fades after 3 seconds of idle while the video plays. Click it, press **Control+Shift+H**, or use the toolbar button to open the panel.
+- **Three rows:** Picture, Sound and Playback. Each has a mark, what is playing now, and a muted line for the best that service publishes for any computer. The row that needs a step shows it.
+- **Marks:** ▲ better on this Mac, ◇ worth trying, – top sent, ✓ computer best, ? unknown.
+- Unestablished limits read “unknown”. Prime Video’s unnumbered HD needs 1080p for ✓; mono does not match stereo.
+- **Details**, closed until you open it, keeps the full Picture, Sound and Playback readout. Each of those rows is still judged **Normal**, **Unusual** or **Note**.
 
 | Safari, a better sound track exists | Chrome, still stepping up to 1080p | Safari, HDR available but SDR playing |
 |---|---|---|
@@ -41,7 +40,7 @@ Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Onl
 
 - `extension/hud.js` is the whole HUD. It also runs on its own, without extension APIs, which is how the userscript works.
 - `tools/build-userscript.sh` rebuilds `dist/stream-quality-hud.user.js` from it.
-- **Tests:** 46 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
+- **Tests:** 89 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
   ```
   npm install            # or set PLAYWRIGHT_FROM to a folder that already has playwright-core
   tools/serve-fixtures.sh
@@ -50,11 +49,11 @@ Each row is judged **Normal**, **Unusual** or **Note**, with a short reason. Onl
 
 ## Status
 
-- [x] Chrome extension (Manifest V3), 1.5.1
+- [x] Chrome extension (Manifest V3), 1.6.0
 - [x] Safari userscript, built from the same file
 - [x] Picture, Sound and Playback judged Normal / Unusual / Note
 - [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
-- [x] 46/46 tests
+- [x] 89/89 tests
 - [ ] Chrome Web Store listing (not planned)
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for why it works the way it does.
