@@ -10,6 +10,9 @@ Most streaming players never say which version they picked. Chrome often gets a 
 - **Three rows:** Picture, Sound and Playback. Each has a mark, what is playing now, and a muted line for the best that service publishes for any computer. The row that needs a step shows it.
 - **Marks:** ▲ better on this Mac, ◇ worth trying, – top sent, ✓ computer best, ? unknown.
 - Unestablished limits read “unknown”. Prime Video’s unnumbered HD needs 1080p for ✓; mono does not match stereo.
+- **Data grade:** bits per pixel, adjusted for codec and size, as a letter from A (disc-like) to F (starved), with a rough share of a Blu-ray's data. It's a rough guide, not a measurement of what you see.
+- **Overlays:** what the page draws over the video (shading, subtitles, controls, solid layers) and any filter or opacity applied to it.
+- **Sound:** when the stream list has a better track than the one playing, the HUD says the service's player chose it. Web players usually don't let you pick the format.
 - **Details**, closed until you open it, keeps the full Picture, Sound and Playback readout. Each of those rows is still judged **Normal**, **Unusual** or **Note**.
 
 | Safari, a better sound track exists | Chrome, still stepping up to 1080p | Safari, HDR available but SDR playing |
@@ -40,7 +43,7 @@ Most streaming players never say which version they picked. Chrome often gets a 
 
 - `extension/hud.js` is the whole HUD. It also runs on its own, without extension APIs, which is how the userscript works.
 - `tools/build-userscript.sh` rebuilds `dist/stream-quality-hud.user.js` from it.
-- **Tests:** 89 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
+- **Tests:** 97 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
   ```
   npm install            # or set PLAYWRIGHT_FROM to a folder that already has playwright-core
   tools/serve-fixtures.sh
@@ -49,11 +52,11 @@ Most streaming players never say which version they picked. Chrome often gets a 
 
 ## Status
 
-- [x] Chrome extension (Manifest V3), 1.6.0
+- [x] Chrome extension (Manifest V3), 1.7.0
 - [x] Safari userscript, built from the same file
 - [x] Picture, Sound and Playback judged Normal / Unusual / Note
 - [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
-- [x] 89/89 tests
+- [x] 97/97 tests
 - [ ] Chrome Web Store listing (not planned)
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for why it works the way it does.

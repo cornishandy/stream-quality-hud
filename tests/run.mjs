@@ -58,6 +58,9 @@ const B = '(Chrome|Safari)';
 const cases = [
   ['DASH, 720p playing', 'mse.html?rep=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /players start low; give it a minute/, /matched to its downloads/, /Playing\s+1280×720 \(720p\), H\.264/, /Top sent\s+1920×1080, H\.264, 6\.0 Mbps/, /3 versions, all SDR \(DASH\)/, /Bitrate\s+3\.0 Mbps listed/]],
   ['DASH, 1080p playing', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari)/, /Source\s+adaptive stream \(Media Source\)/]],
+  ['data grade: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari) · grade C \(typical streaming; about 20% of a Blu-ray’s data\)/, /Data grade\s+C · 0\.121 bits per pixel[^\n]*typical streaming; about 20% of a Blu-ray’s data[^\n]*\nNormal/, /Overlays\s+none found[^\n]*\nNormal/]],
+  ['a player shade and subtitles are listed over the video', 'mse.html?rep=2&overlay=1', [/Over the video: shading over 37%, up to 60% dark; subtitles\./, /Overlays\s+shading over 37%, up to 60% dark; subtitles[^\n]*\nNote/]],
+  ['a filter on the video is called out', 'mse.html?rep=2&filter=1', [/Over the video: video filter brightness\(0\.8\)\./, /Overlays\s+video filter brightness\(0\.8\)the page changes the picture itself\nUnusual/]],
   ['DASH film plus a trailer list: downloads pick the film', 'mse.html?rep=1&trailer=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /matched to its downloads/, /\(DASH\)/]],
   ['HLS list seen but not this video’s: no verdict', 'hls.html', [/no stream list confirmed as this video’s/, /Stream lists\s+1 \(best in them: 4K\)/]],
   ['plain file, no list', 'plain.html', [/no stream list seen/, /Playing\s+1920×1080 \(1080p\)/, /On screen\s+\d+×\d+ px/, /(?:about original size|, enlarged|, shrunk)/, /Dropped\s+\d+ of/, /Refresh\s+\d+ Hz/, /Smoothness\s+(even|uneven|can’t check here)/, /Frame rate\s+2[34](\.\d+)? fps/, /Control\+Shift\+H also opens and closes this panel/]],
@@ -87,11 +90,11 @@ async function soundCases(label, page, errors) {
   console.log(`INFO ${label} says it can play: E-AC-3 ${ec3}, HEVC ${hevc}`);
   let text = (await open(page, 'mse.html?rep=2&audio=1')) || '(no HUD)';
   const dashSound = ec3
-    ? [/Better sound sent/, /AAC stereo · Dolby Digital Plus 5\.1 also sent; (Chrome|Safari) can play it/, /Pick Dolby Digital Plus 5\.1 in the player’s audio menu, if it has one/, /Playing\s+AAC stereo, 48 kHz[^\n]*\nUnusual/]
+    ? [/–\nSound\nAAC stereo · 127\.0\.0\.1’s player chose it over Dolby Digital Plus 5\.1\n/, /Playing\s+AAC stereo, 48 kHz[^\n]*player chose this one\nNote/, /says it can decode it; the player didn’t pick it/]
     : [/AAC stereo · Dolby Digital Plus 5\.1 also sent; (Chrome|Safari) can’t play it/, new RegExp('Playing\\s+AAC stereo, 48 kHz[^\\n]*' + name + ' can’t play Dolby Digital Plus\\nNormal')];
   let pats = dashSound.concat([/Top sent\s+Dolby Digital Plus 5\.1, 48 kHz, 640 kbps/, /After this\s+Movie Sound/]);
   let bad = [/96 kbps/]; // the audio-description track is never "the best"
-  if (!ec3) bad = bad.concat([/Better sound sent/, /\bPick /]);
+  bad = bad.concat([/Better sound sent/, /\bPick /, /▲\nSound/]); // the player picks the sound track, so it is never a step
   check(`${label}: DASH sound: playing track, the list's best, and whether ${name} can play it`, pats.every((p) => p.test(text)) && !bad.some((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
 
   text = (await open(page, 'hlsplay.html')) || '(no HUD)';
@@ -131,6 +134,25 @@ async function serviceCase(label, ctx, page, url, pats, notPats = []) {
 }
 
 const BANNED = /\bthe site\b|\bthis site\b|\bthe list\b|pixel for pixel|bottleneck|\bfix\b|\bno list\b|(?<!stream )\blist goes\b|\bconfirmed list\b|\bin the list\b/i;
+async function steadyLayout(label, page) {
+  await open(page, 'mse.html?rep=2&blink=1');
+  const samples = [];
+  for (let i = 0; i < 8; i++) {
+    samples.push(await page.evaluate(() => {
+      const root = document.querySelector('[data-stream-quality-hud]').shadowRoot;
+      const keys = [...root.querySelectorAll('.det .row .k, .quiet b')];
+      return { h: root.querySelector('.p').offsetHeight, keys: keys.map((k) => k.textContent + '@' + Math.round(k.getBoundingClientRect().top)).join('|') };
+    }));
+    await page.waitForTimeout(450);
+  }
+  // A line may push the others down once, the first time it appears; after that nothing moves, and nothing ever moves up.
+  const tops = samples.map((x) => x.keys.split('|').map((k) => +k.split('@')[1]));
+  const neverUp = tops.every((t, i) => !i || (t.length === tops[i - 1].length && t.every((y, j) => y >= tops[i - 1][j])));
+  const settled = samples.slice(3).every((x) => x.h === samples[3].h && x.keys === samples[3].keys);
+  const ok = neverUp && settled;
+  check(`${label}: lines that come and go never bounce`, ok, JSON.stringify(samples.map((x) => x.h)) + '\n' + samples.map((x) => x.keys).join('\n'));
+}
+
 async function scorecardChecks(label, ctx, page) {
   await serveAs(ctx, 'https://www.netflix.com');
   await serveAs(ctx, 'https://www.paramountplus.com');
@@ -343,6 +365,7 @@ async function timingChecks(engine, label) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await runCases('Chromium', page, [...cases, ...crossOrigin], errors);
+  await steadyLayout('Chromium', page);
   await soundCases('Chromium', page, errors);
   {
     const sdr = !(await page.evaluate(() => matchMedia('(dynamic-range: high)').matches));
@@ -443,6 +466,7 @@ async function timingChecks(engine, label) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
+  await steadyLayout('WebKit', page);
   await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /only version sent to Safari|top of \d+ sent to Safari|sent Safari up to|top Safari can play/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
   await soundCases('WebKit', page, errors);
   {

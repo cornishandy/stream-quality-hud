@@ -4,6 +4,14 @@
 const q=new URLSearchParams(location.search), rep=q.get('rep')||'1', other=q.get('xo');
 const codecs={0:'avc1.64001e',1:'avc1.64001f',2:'avc1.640028'}[rep];
 const mpd=other?('http://cdn.test:'+other+'/dash/stream.mpd'):'dash/stream.mpd';
+if(q.get('overlay')){ // a player's top shade and a subtitle line, drawn over the video as many players do
+  document.body.insertAdjacentHTML('beforeend','<div style="position:absolute;left:0;top:0;width:960px;height:200px;background:linear-gradient(rgba(0,0,0,.6),transparent);pointer-events:none"></div><div class="subtitle-line" style="position:absolute;left:300px;top:460px;color:#fff;pointer-events:none">Hello</div>');
+}
+if(q.get('filter')) v.style.filter='brightness(0.8)';
+if(q.get('blink')){ // a shade and a subtitle that come and go every 700 ms, like player controls
+  document.body.insertAdjacentHTML('beforeend','<div id=blink style="position:absolute;left:0;top:340px;width:960px;height:200px;background:linear-gradient(transparent,rgba(0,0,0,.7));pointer-events:none"><span class="caption-text">Line</span></div>');
+  setInterval(()=>{const b=document.getElementById('blink');b.style.display=b.style.display==='none'?'':'none'},700);
+}
 (async()=>{
   await fetch(mpd, other?{mode:'no-cors'}:{}); // the "player" reads its quality list
   if(q.get('trailer')) await fetch('trailer.m3u8'); // and a trailer's list

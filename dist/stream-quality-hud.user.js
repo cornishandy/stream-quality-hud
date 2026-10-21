@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Stream Quality HUD
 // @description  Shows what a streaming video is really playing and how it compares with the best the service offers any computer. A button over the video or Control+Shift+H opens it.
-// @version      1.6.0
+// @version      1.7.0
 // @match        *://*/*
 // @run-at       document-start
 // @inject-into  content
@@ -829,6 +829,157 @@
     return [bps / 1e6 < lo / 2 ? 'unusual' : 'note', 'lean; ' + range];
   }
 
+  // Data per pixel: video bits per pixel per frame, then made comparable across codecs and sizes. Newer codecs need
+  // fewer bits for the same picture (rough rule: HEVC, VP9 and Dolby Vision about 1.6× as efficient as H.264, AV1 and
+  // VVC about 2×), and bigger frames need fewer bits per pixel (scaled by the fourth root of the area, from 1080p).
+  // The grade bands are a rough guide (Andy asked for one, 21 Oct 2026); a typical 1080p Blu-ray (H.264, about
+  // 30 Mbps at 24 fps) scores about 0.6. A per-title encoder gives cartoons fewer bits on purpose.
+  const GRADES = [[0.3, 'A', 'disc-like'], [0.15, 'B', 'generous for streaming'], [0.09, 'C', 'typical streaming'], [0.055, 'D', 'lean'], [0, 'F', 'starved']];
+  const DISC_BPP = 0.6;
+  function dataGrade(bps, w, h, fps, codec) {
+    if (!(bps > 0 && w > 0 && h > 0 && fps > 0) || !codec || / or /.test(codec)) return null;
+    const factor = /H\.264/.test(codec) ? 1 : /AV1|VVC/.test(codec) ? 2 : /HEVC|VP9|Dolby Vision/.test(codec) ? 1.6 : 0;
+    if (!factor) return null;
+    const bpp = bps / (w * h * fps);
+    const adj = bpp * factor * Math.pow((w * h) / (1920 * 1080), 0.25);
+    const [, letter, word] = GRADES.find(([min]) => adj >= min);
+    const disc = adj / DISC_BPP;
+    return { bpp, adj, letter, word, disc: disc >= 0.95 ? 'about a Blu-ray’s' : disc >= 0.15 ? 'about ' + Math.round(disc * 10) * 10 + '% of a Blu-ray’s' : 'under 15% of a Blu-ray’s' };
+  }
+
+  // What is drawn over the video or applied to it, read from the page's layout: effects (filter, opacity, blend) on the
+  // video and the elements holding it, and visible elements later in the page (or raised above it) that cover part of it.
+  // Page order is a stand-in for stacking order, and closed shadow roots and the browser's own compositing can't be seen.
+  // A CSS colour's alpha and whether it is dark (rgb()/rgba() and color(srgb …)); other colour spaces: lightness unknown.
+  function colourOf(c) {
+    const m = /^(rgba?|color)\(([^)]*)\)$/.exec((c || '').trim());
+    if (!m) return null;
+    const [main, slash] = m[2].split('/');
+    const p = main.replace(/,/g, ' ').split(/\s+/).filter(Boolean);
+    let a = slash != null ? slash.trim() : m[1] !== 'color' && p.length >= 4 ? p[3] : '1';
+    a = parseFloat(a) * (/%/.test(a) ? 0.01 : 1);
+    let rgb = null;
+    if (m[1] === 'color') rgb = /^(srgb|srgb-linear|display-p3)$/.test(p[0]) ? p.slice(1, 4).map(Number) : null;
+    else rgb = p.slice(0, 3).map((x) => parseFloat(x) / (/%/.test(x) ? 100 : 255));
+    const lum = rgb && rgb.every((x) => isFinite(x)) ? 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] : null;
+    return isFinite(a) ? { a, dark: lum == null ? null : lum < 0.35 } : null;
+  }
+  const coloursIn = (img) => [...(img || '').matchAll(/(?:rgba?|color)\([^)]*\)/g)].map((x) => colourOf(x[0])).filter(Boolean);
+  // Paint rank of an element's branch under a shared ancestor: negative z-index < not positioned < positioned < higher z-index.
+  function paintRank(node, common) {
+    let top = node;
+    while (top.parentElement && top.parentElement !== common) top = top.parentElement;
+    const cs = getComputedStyle(top);
+    const z = parseInt(cs.zIndex, 10);
+    if (cs.position === 'static') return 0;
+    return isFinite(z) ? (z < 0 ? -1 : 1 + z) : 1;
+  }
+  // The picture's own rectangle inside the video element (object-fit contain leaves bars).
+  function pictureRect(video) {
+    const r = video.getBoundingClientRect();
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const fit = getComputedStyle(video).objectFit;
+    if (!vw || !vh || fit === 'fill' || fit === 'cover') return r;
+    let k = Math.min(r.width / vw, r.height / vh);
+    if (fit === 'none') k = 1;
+    else if (fit === 'scale-down') k = Math.min(1, k);
+    const w = vw * k, h = vh * k, left = r.left + (r.width - w) / 2, top = r.top + (r.height - h) / 2;
+    return { left, top, right: left + w, bottom: top + h, width: w, height: h };
+  }
+  function overlays(video) {
+    const effects = [];
+    for (let a = video; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      const who = a === video ? 'video' : 'player';
+      if (cs.filter && cs.filter !== 'none') effects.push(who + ' filter ' + cs.filter);
+      if (parseFloat(cs.opacity) < 1) effects.push(who + ' opacity ' + Math.round(parseFloat(cs.opacity) * 100) + '%');
+      if (cs.mixBlendMode && cs.mixBlendMode !== 'normal') effects.push(who + ' blend ' + cs.mixBlendMode);
+    }
+    const vr = pictureRect(video);
+    const varea = vr.width * vr.height;
+    const found = [];
+    if (varea > 0) {
+      let box = video.parentElement;
+      for (let i = 0; i < 6 && box && box.parentElement && box.parentElement !== document.documentElement; i++) {
+        const r = box.parentElement.getBoundingClientRect();
+        if (r.width * r.height > varea * 1.6) break;
+        box = box.parentElement;
+      }
+      const els = box ? box.querySelectorAll('*') : [];
+      const seen = new Set();
+      for (let i = 0; i < els.length && i < 1500; i++) {
+        const el = els[i];
+        if (el === video || el.contains(video) || el.hasAttribute('data-stream-quality-hud')) continue;
+        const r = el.getBoundingClientRect();
+        const ow = Math.min(r.right, vr.right) - Math.max(r.left, vr.left), oh = Math.min(r.bottom, vr.bottom) - Math.max(r.top, vr.top);
+        const hint = (typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('data-testid') || '');
+        const captions = /caption|subtitle|timedtext|cue/i.test(hint) && el.textContent.trim();
+        if (ow <= 0 || oh <= 0 || (!captions && (ow * oh) / varea < 0.01)) continue;
+        // Above the video: a higher paint rank under their shared ancestor, or the same rank and later in the page.
+        let common = video.parentElement;
+        while (common && !common.contains(el)) common = common.parentElement;
+        if (!common) continue;
+        const rv = paintRank(video, common), re = paintRank(el, common);
+        if (re < rv || (re === rv && !(video.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING))) continue;
+        const cs = getComputedStyle(el);
+        if (el.checkVisibility ? !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) : cs.visibility !== 'visible') continue;
+        let op = 1;
+        for (let a = el; a && a !== common.parentElement; a = a.parentElement) op *= parseFloat(getComputedStyle(a).opacity);
+        const cover = Math.round((100 * ow * oh) / varea);
+        const tagName = el.localName;
+        // The element's own background, then its ::before and ::after layers.
+        const fills = [cs];
+        for (const pe of ['::before', '::after']) {
+          const ps = getComputedStyle(el, pe);
+          if (ps.content && ps.content !== 'none' && ps.display !== 'none') fills.push(ps);
+        }
+        let kind = '', dark = 0, light = 0, unknownTone = false;
+        const take = (c, o) => {
+          if (c.dark === true) dark = Math.max(dark, c.a * o);
+          else if (c.dark === false) light = Math.max(light, c.a * o);
+          else unknownTone = true;
+        };
+        if (captions) kind = 'subtitles';
+        else if (/^(canvas|video|img|svg|iframe)$/.test(tagName) && cover >= 5) kind = tagName === 'img' || tagName === 'svg' ? 'image' : tagName;
+        else {
+          for (const f of fills) {
+            const o = op * (f === cs ? 1 : parseFloat(f.opacity) || 0);
+            if (/gradient/.test(f.backgroundImage)) {
+              const cols = coloursIn(f.backgroundImage);
+              if (cols.some((c) => c.a > 0)) ((kind = kind === 'solid' ? kind : 'shade'), cols.forEach((c) => take(c, o)));
+            }
+            const bg = colourOf(f.backgroundColor);
+            if (bg && bg.a > 0 && cover >= 5) {
+              if (bg.a * o >= 0.95) kind = 'solid';
+              else if (kind !== 'solid') kind = kind || 'tint';
+              take(bg, o);
+            }
+          }
+          if (!kind && /^(button|input)$/.test(tagName)) kind = 'controls';
+        }
+        if (!kind || seen.has(el.parentElement)) continue;
+        seen.add(el);
+        found.push({ kind, cover, dark, light, unknownTone });
+      }
+    }
+    try {
+      for (const t of video.textTracks || []) if (t.mode === 'showing' && t.activeCues && t.activeCues.length) found.push({ kind: 'subtitles', cover: 0, dark: 0 });
+    } catch (e) {}
+    const by = (k) => found.filter((f) => f.kind === k);
+    const parts = [];
+    const shades = by('shade').concat(by('tint'));
+    if (shades.length) {
+      const dark = Math.max(...shades.map((f) => f.dark)), light = Math.max(...shades.map((f) => f.light));
+      const tone = [dark > 0.005 ? 'up to ' + Math.round(dark * 100) + '% dark' : '', light > 0.005 ? 'up to ' + Math.round(light * 100) + '% light' : '', shades.some((f) => f.unknownTone) ? 'tone unknown' : ''].filter(Boolean).join(', ');
+      parts.push((by('shade').length ? 'shading' : 'tint') + ' over ' + Math.min(100, Math.max(...shades.map((f) => f.cover))) + '%' + (tone ? ', ' + tone : ''));
+    }
+    if (by('solid').length) parts.push('solid layer over ' + Math.max(...by('solid').map((f) => f.cover)) + '%');
+    if (by('subtitles').length) parts.push('subtitles');
+    if (by('controls').length) parts.push('player controls');
+    for (const k of ['canvas', 'video', 'image', 'iframe']) if (by(k).length) parts.push(k + (by(k).length > 1 ? ' ×' + by(k).length : ''));
+    return { effects, parts, shadeDark: shades.length ? Math.max(...shades.map((f) => f.dark)) : 0, shadeLight: shades.length ? Math.max(...shades.map((f) => f.light)) : 0, solid: by('solid').length > 0 };
+  }
+
   // A version's identity: HLS variants that share a playlist are one picture (they differ only in their sound group).
   const versionKey = (v) => (v.hls ? [...v.exact][0] || '' : [v.w, v.h, v.bps, v.codecs, v.range].join('|'));
 
@@ -868,6 +1019,12 @@
     const screenHdr = !!(window.matchMedia && matchMedia('(dynamic-range: high)').matches);
     const playTag = tag(vw, vh);
     const early = m.playingFor < 60;
+
+    // Frame rate first: the data grade needs it.
+    const hz = refreshHz();
+    const ft = frameTiming(hz);
+    const listedFps = (cfg && cfg.framerate) || (exact.length === 1 && exact[0].fps) || (uniq(playing.map((v) => v.fps)).length === 1 && playing[0].fps) || (ft && ft.fps);
+    const fps = listedFps || m.fps;
 
     // Picture: against the best version this browser says it can play in the video's own list, else the service's published cap.
     let pic, topVs = null, topV = null, topPlay = null, count = 0;
@@ -946,13 +1103,62 @@
     else colJ = ['note', 'no stream list to check'];
     pictureRows.push(['Colour', playingRange || 'not reported', ...colJ]);
     const listed = exact.length === 1 ? exact : playing;
+    let videoBps = 0, lowBps = 0, gradeHow = '', soundBound = 0;
     if (listed.length && rangeOf(listed)) {
       const bps = Math.max(...listed.map((v) => v.bps));
       const j = judgeBitrate(bps, playTag, codec, false);
       if (exact.length !== 1 && rangeOf(listed).includes('–')) j[1] += '; judged on high end';
       pictureRows.push(['Bitrate', rangeOf(listed) + ' listed' + (ladder.kind === 'HLS' ? ' (incl. sound)' : '') + (m.rate ? ', ' + mbps(m.rate) + ' measured' : ''), ...j]);
-    } else if (cfg && cfg.bitrate) pictureRows.push(['Bitrate', mbps(cfg.bitrate) + ' (track)', ...judgeBitrate(cfg.bitrate, playTag, codec, false)]);
-    else if (m.rate) pictureRows.push(['Bitrate', mbps(m.rate) + ', measured', ...judgeBitrate(m.rate, playTag, codec, true)]);
+      // An HLS figure covers the video plus its largest sound pairing (RFC 8216 4.3.4.2): take that off when every
+      // listed sound track gives its bitrate; otherwise grade the total and say it may read a little high.
+      const aBps = ladder.kind === 'HLS' && ladder.audio.length && ladder.audio.every((a) => a.bps > 0) ? Math.max(...ladder.audio.map((a) => a.bps)) : 0;
+      videoBps = aBps && aBps < bps / 2 ? bps - aBps : bps;
+      const withSound = ladder.kind === 'HLS' && ladder.audio.length > 0 && videoBps === bps;
+      gradeHow = withSound ? 'listed incl. sound' : 'listed';
+      // Sound bitrates unlisted: grade a range, allowing up to 768 kbps of sound (streaming Atmos tops out about there).
+      if (withSound) soundBound = 768000;
+      // Several bitrates at this size and the exact one unknown: the low end bounds the grade too.
+      lowBps = (exact.length !== 1 && rangeOf(listed).includes('–') ? Math.min(...listed.map((v) => v.bps).filter((x) => x > 0)) - (videoBps < bps ? bps - videoBps : 0) : videoBps) - soundBound;
+      if (lowBps < videoBps && exact.length !== 1 && rangeOf(listed).includes('–')) gradeHow += '; exact version unknown';
+    } else if (cfg && cfg.bitrate) {
+      pictureRows.push(['Bitrate', mbps(cfg.bitrate) + ' (track)', ...judgeBitrate(cfg.bitrate, playTag, codec, false)]);
+      (videoBps = cfg.bitrate), (gradeHow = 'track');
+    } else if (m.rate) {
+      pictureRows.push(['Bitrate', mbps(m.rate) + ', measured', ...judgeBitrate(m.rate, playTag, codec, true)]);
+      (videoBps = m.rate), (gradeHow = 'measured; varies by scene');
+    }
+    const grade = dataGrade(videoBps, vw, vh, fps, codec);
+    const gradeLow = grade && lowBps > 0 && lowBps < videoBps ? dataGrade(lowBps, vw, vh, fps, codec) : null;
+    if (grade && gradeLow && gradeLow.letter !== grade.letter) {
+      const far = GRADES.findIndex((g) => g[1] === gradeLow.letter) - GRADES.findIndex((g) => g[1] === grade.letter) > 1;
+      grade.letter = grade.letter + (far ? ' to ' : ' or ') + gradeLow.letter;
+      grade.word = grade.word + (far ? ' to ' : ' or ') + gradeLow.word;
+      if (!/^under/.test(grade.disc)) grade.disc = 'up to ' + grade.disc.replace(/^about /, '');
+    }
+    if (grade) {
+      pictureRows.push([
+        'Data grade',
+        grade.letter + ' · ' + (/ (or|to) /.test(grade.letter) ? 'up to ' : '') + grade.bpp.toFixed(3) + ' bits per pixel',
+        /^F/.test(grade.letter) ? 'unusual' : /[DF]$/.test(grade.letter) ? 'note' : 'normal',
+        grade.word + '; ' + grade.disc + ' data, codec-adjusted (' + gradeHow + (listedFps ? '' : ', rough frame rate') + '); a rough guide',
+      ]);
+    }
+    const ov = overlays(video);
+    {
+      const bits = ov.effects.concat(ov.parts);
+      const j = ov.effects.length
+        ? ['unusual', 'the page changes the picture itself']
+        : ov.solid
+          ? ['unusual', 'a solid layer hides part of the picture']
+          : ov.shadeDark >= 0.25
+            ? ['note', 'darkens part of the picture; players usually fade it with the controls']
+            : ov.shadeLight >= 0.25
+              ? ['note', 'lightens part of the picture; players usually fade it with the controls']
+            : bits.length
+              ? ['normal', 'drawn on top; the picture itself is untouched']
+              : ['normal', 'none seen in the page’s layout; a player can hide layers from this check'];
+      pictureRows.push(['Overlays', bits.length ? bits.join('; ') : 'none found', ...j]);
+    }
     if (shown) {
       const k = shown.h / vh;
       pictureRows.push([
@@ -971,22 +1177,18 @@
       const j = {
         best: ['normal', 'best listed'],
         cant: ['normal', B + ' can’t play ' + (bestA && bestA.name)],
-        lower: canBest ? ['unusual', BA + ' listed'] : ['note', BA + ' listed'],
+        lower: canBest ? ['note', BA + ' listed; ' + S + '’s player chose this one'] : ['note', BA + ' listed'],
         known: surround || !pA.bps || pA.bps >= 96000 ? ['normal', surround ? 'surround' : pA.bps ? 'typical streaming sound' : ''] : ['note', 'low for film sound'],
       }[snd];
       soundRows.push(['Playing', audioLong(pA) + (measuredA ? ', ' + measuredA + ' measured' : ''), ...j]);
     } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'format and channels not reported']);
     if (ss) soundRows.push([S, sCap ? sCapText + ' in ' + B : 'limit for ' + B + ': unknown', '', ss.best ? 'best anywhere: ' + ss.best : 'best sound anywhere: unknown']);
-    if (bestA && snd !== 'best') soundRows.push(['Top sent', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest ? B + ' can play it' : '']);
+    if (bestA && snd !== 'best') soundRows.push(['Top sent', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest && snd === 'lower' ? B + ' says it can decode it; the player didn’t pick it' : canBest ? B + ' says it can decode it' : '']);
     if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'after the browser; both on = processed twice']);
     else soundRows.push(['After this', 'Movie Sound, if on', '', 'after the browser' + (surroundAny ? ', on stereo (surround folded)' : '') + '; not seen here']);
 
     // ---- Playback
     const playbackRows = [];
-    const hz = refreshHz();
-    const ft = frameTiming(hz);
-    const listedFps = (cfg && cfg.framerate) || (playing[0] && playing[0].fps) || (ft && ft.fps);
-    const fps = listedFps || m.fps;
     if (fps) {
       const near2 = (tol) => STANDARD_RATES.find(([r]) => Math.abs(fps - r) <= r * tol);
       const std = listedFps ? near2(0.005) : near2(0.02);
@@ -1049,6 +1251,7 @@
     }
     if (missingHdr) picNow = pv + ' · ' + hdrPlayable[0].range + ' sent at this size; ' + B + ' can play it';
     if (hdUnconfirmed) picNow = pv + ' · within ' + S + '’s “HD”; its top size isn’t published';
+    if (grade) picNow += ' · grade ' + grade.letter + ' (' + grade.word + '; ' + grade.disc + ' data)';
     let picMark, picKind = '';
     const picSteps = [];
     const macRoute = !!(pcPic && pcPic.mac && pcPic.mac !== 'any' && pcPic.mac !== b && pcRank > Math.max(rankOf(playTag), rankOf(bestHere)) && (!capRank || capRank < pcRank));
@@ -1075,13 +1278,15 @@
     if (snd === 'none') sndNow = 'No sound track';
     else if (snd === 'best') sndNow = aS + ' · ' + (pool.length === 1 ? 'only track sent to ' + B : 'top track sent to ' + B);
     else if (snd === 'known') sndNow = aS;
-    else if (snd === 'lower') sndNow = aS + ' · ' + BA + ' also sent' + (canBest === true ? '; ' + B + ' can play it' : canBest === false ? '; ' + B + ' can’t play it' : '');
+    else if (snd === 'lower') sndNow = aS + ' · ' + (canBest === true ? S + '’s player chose it over ' + BA : BA + ' also sent' + (canBest === false ? '; ' + B + ' can’t play it' : ''));
     else if (snd === 'cant') sndNow = aS + ' · ' + BA + ' also sent; ' + B + ' can’t play it';
     else sndNow = 'Not reported by ' + B + (BA ? ' · up to ' + BA + ' sent' : '');
     if (snd === 'none') sndMark = '';
     else {
       sndCmp = pcSnd ? pcSnd.cmp : 'Computer best: unknown';
-      if (snd === 'lower' && canBest) (sndMark = 'gap'), (sndKind = 'lower'), sndSteps.push('Pick ' + BA + ' in the player’s audio menu, if it has one.');
+      // The service's player picks the track for this browser and device (an audio menu, if any, picks the language),
+      // so a better track it passed over is a fact, not a step.
+      if (snd === 'lower' && canBest) sndMark = 'top';
       else if (snd === 'unknown') sndMark = 'unk';
       else if (pcSnd && pcSnd.complete && soundRank(pA) >= soundRank(pcSnd.best)) sndMark = 'ok';
       else sndMark = 'top';
@@ -1157,9 +1362,6 @@
     } else if (lead && lead.part === 'Picture' && lead.kind === 'belowcap') {
       title = cap + ' possible in ' + B;
       sub = 'Playing ' + playTag + '; ' + S + ' offers ' + B + ' up to ' + cap + ' if the film and plan allow.' + (early ? ' Players start low; give it a minute.' : '');
-    } else if (lead && lead.part === 'Sound' && lead.kind === 'lower') {
-      title = 'Better sound sent';
-      sub = 'Playing ' + aS + '; ' + S + ' also sent ' + BA + ', which ' + B + ' can play.';
     } else if (lead && lead.part === 'Playback' && lead.kind === 'drop') {
       title = 'Dropping frames';
       sub = p.toFixed(1) + '% of frames dropped ' + (when ? 'in the last minute' : 'so far') + '; expect stutter.';
@@ -1193,8 +1395,10 @@
     if (noPc) quiet.push(['Computer best:', svc ? 'unknown for ' + S + '.' : 'not on file for ' + S + '.']);
     if (svc && svc.off) quiet.push(['Not on this Mac:', svc.off + '.']);
     if (svc && svc.tv) quiet.push(['Published for TV apps:', svc.tv + '.']);
+    quiet.push(['Over the video:', ov.effects.length || ov.parts.length ? ov.effects.concat(ov.parts).join('; ') + '.' : 'nothing found.']);
     const cant = [];
     if (ft && ft.unknown) cant.push('film frame timing (' + B + ' doesn’t report it)');
+    cant.push('how ' + B + ' converts the video’s colours for the screen (browsers differ here)');
     cant.push('Movie Sound (it works after the browser)');
     quiet.push(['Can’t tell:', cant.join('; ')]);
 
@@ -1309,6 +1513,11 @@
       '<div class="p" id="p" hidden><div class="head"></div><details class="more"><summary>Details</summary><div class="det"></div></details></div>';
     // A mouse click leaves the pill unfocused (Chrome focuses buttons on click), so it can still fade and Space
     // still reaches the player; Enter or Space on a focused pill keeps the focus there.
+    root.querySelector('details').addEventListener('toggle', () => {
+      heldPx = 0;
+      lineHeights.clear();
+      root.querySelector('.p').style.minHeight = '';
+    });
     root.querySelector('.pill').addEventListener('click', (e) => {
       setPanel(!panelOpen);
       if (e.detail > 0) e.currentTarget.blur();
@@ -1323,6 +1532,8 @@
 
   function leaveHost() {
     if (host && host.isConnected) host.remove();
+    keptFor = null;
+    heldPx = 0;
     clearInterval(timer);
     timer = null;
     clearTimeout(idleTimer);
@@ -1385,9 +1596,56 @@
     pill.setAttribute('aria-expanded', panelOpen ? 'true' : 'false');
     pill.setAttribute('aria-label', 'Stream quality: ' + text + (panelOpen ? '. Hide panel' : '. Show panel'));
     root.querySelector('.p').hidden = !panelOpen;
+    keepLines(r);
     root.querySelector('.head').innerHTML = headHtml(r);
     root.querySelector('.det').innerHTML = detHtml(r);
+    holdHeight(root.querySelector('.p'));
     updateIdle();
+  }
+
+  // Lines that come and go (a measured rate, an overlay that fades with the controls) would make every line below
+  // jump, so while the panel shows one video a line once shown keeps its place, reading "—" when it has nothing now,
+  // and the panel never shrinks by itself. A new video, closing the panel or opening/closing Details starts afresh.
+  let keptFor = null, kept = { quiet: [], sections: {} }, heldPx = 0, lineHeights = new Map();
+  function keepLines(r) {
+    const v = r.wait ? null : mainVideo();
+    if (!panelOpen || v !== keptFor) (keptFor = v), (kept = { quiet: [], sections: {} }), (heldPx = 0), lineHeights.clear();
+    if (r.wait) return;
+    const merge = (order, rows, keyOf, blank) => {
+      for (const row of rows) if (!order.includes(keyOf(row))) order.splice(order.length, 0, keyOf(row));
+      return order.map((k) => rows.find((row) => keyOf(row) === k) || blank(k));
+    };
+    if (r.quiet) r.quiet = merge(kept.quiet, r.quiet, (q) => q[0], (k) => [k, '—']);
+    for (const sec of r.sections || []) {
+      const order = kept.sections[sec.name] || (kept.sections[sec.name] = []);
+      // Insert new keys after the key they follow now, so a late row lands where it belongs.
+      sec.rows.forEach((row, i) => {
+        if (order.includes(row[0])) return;
+        const prev = i ? order.indexOf(sec.rows[i - 1][0]) : -1;
+        order.splice(prev + 1, 0, row[0]);
+      });
+      sec.rows = order.map((k) => sec.rows.find((row) => row[0] === k) || [k, '—', '', 'nothing to show right now']);
+    }
+  }
+  function holdHeight(p) {
+    // A fresh start (heldPx 0) measures without the old minimum.
+    if (!panelOpen || !heldPx) p.style.minHeight = '';
+    if (!panelOpen) return;
+    const seenKeys = new Map();
+    // Each line keeps the tallest it has been, so a line that wraps to two and back doesn't move the ones below.
+    for (const el of p.querySelectorAll('.r2, .quiet > div, .det .row')) {
+      let key = el.className + ':' + ((el.querySelector('.k, b') || {}).textContent || '');
+      seenKeys.set(key, (seenKeys.get(key) || 0) + 1);
+      key += '#' + seenKeys.get(key); // Picture and Sound both have Playing and Top sent
+      const h = Math.max(lineHeights.get(key) || 0, el.getBoundingClientRect().height);
+      lineHeights.set(key, h);
+      el.style.minHeight = h + 'px';
+      el.style.boxSizing = 'border-box';
+    }
+    heldPx = Math.min(Math.max(heldPx, p.offsetHeight), window.innerHeight - 80);
+    const cs = getComputedStyle(p);
+    const extra = cs.boxSizing === 'border-box' ? 0 : ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((t, k) => t + (parseFloat(cs[k]) || 0), 0);
+    p.style.minHeight = Math.max(0, heldPx - extra) + 'px';
   }
 
   // In full screen only the full-screen element is drawn, so the pill and panel move inside it together.
