@@ -1,9 +1,10 @@
 # Session handoff
 
 ## State (19 Oct 2026)
+- 1.8.0 (21 Oct 2026): streaming grade beside the disc grade; Details stays reachable in short windows. Pushed.
 - 1.7.0 (21 Oct 2026): data grade, overlays, sound the player picks, and lines that hold still. Pushed 21 Oct 2026.
 - 1.6.0 (20 Oct 2026), installed on Andy's Mac: the Safari userscript loads on the next page load; Chrome's unpacked copy is updated on disk and takes effect when the extension is reloaded.
-- 97/97 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
+- 102/102 tests pass (`tools/serve-fixtures.sh`, then `npm test`).
 - Moved out of a scratch folder into this repo on 19 Oct 2026, with no code changes. The userscript rebuilt byte-identical.
 
 ## History

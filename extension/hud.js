@@ -248,7 +248,7 @@
       try {
         if (uri) exact.add(noFrag(new URL(uri, url).href)); // query kept: it often names the asset
       } catch (e) {}
-      variants.push({ w: +res[1], h: +res[2], bps: +(a['AVERAGE-BANDWIDTH'] || a.BANDWIDTH) || 0, codecs, fps: +a['FRAME-RATE'] || 0, range, exact, patterns: [], hls: true });
+      variants.push({ w: +res[1], h: +res[2], bps: +(a['AVERAGE-BANDWIDTH'] || a.BANDWIDTH) || 0, peak: !a['AVERAGE-BANDWIDTH'], codecs, fps: +a['FRAME-RATE'] || 0, range, exact, patterns: [], hls: true });
     }
     // Sound: separate audio renditions when the list has them, else the audio codecs muxed into the variants.
     const audio = [];
@@ -825,17 +825,39 @@
   // VVC about 2×), and bigger frames need fewer bits per pixel (scaled by the fourth root of the area, from 1080p).
   // The grade bands are a rough guide (Andy asked for one, 21 Oct 2026); a typical 1080p Blu-ray (H.264, about
   // 30 Mbps at 24 fps) scores about 0.6. A per-title encoder gives cartoons fewer bits on purpose.
-  const GRADES = [[0.3, 'A', 'disc-like'], [0.15, 'B', 'generous for streaming'], [0.09, 'C', 'typical streaming'], [0.055, 'D', 'lean'], [0, 'F', 'starved']];
+  // Disc bands as shares of the Blu-ray reference (adjusted 0.30, 0.15, 0.09 and 0.055 bits per pixel over 0.6).
   const DISC_BPP = 0.6;
+  const GRADES = [[0.3, 'A'], [0.15, 'B'], [0.09, 'C'], [0.055, 'D'], [0, 'F']].map(([x, l]) => [x / DISC_BPP, l]);
+  // The streaming grade compares the same figure with a high mainstream streaming reference at the playing size, in
+  // the same units (H.264-equivalent Mbps at 24 fps → adjusted bits per pixel). From GPT-6.1-Sol's sourced research
+  // (21 Oct 2026): 4K 46.4 (Apple TV+, 29 Mbps HEVC, measured report), 1080p 11.2 (Max, 6.99 Mbps HEVC, measured
+  // report), 720p 4.5 (Apple's HLS authoring target; a fallback, not a measured maximum). High references, not
+  // service ceilings. Other sizes have none. Bands are a rough guide (Andy asked for this grade, 21 Oct 2026).
+  const STREAM_REF = { '4K': 0.33, '1080p': 0.225, '720p': 0.166 };
+  const SGRADES = [[0.8, 'A', 'generous data'], [0.55, 'B', 'solid data'], [0.35, 'C', 'moderate data'], [0.2, 'D', 'lean data'], [0, 'F', 'very lean data']];
+  const letterOf = (bands, x) => bands.find(([min]) => x >= min);
+  const pctText = (r) => (r >= 0.95 && r < 1.05 ? 'about 100%' : r >= 0.15 ? 'about ' + Math.round(r * 10) * 10 + '%' : 'under 15%');
   function dataGrade(bps, w, h, fps, codec) {
     if (!(bps > 0 && w > 0 && h > 0 && fps > 0) || !codec || / or /.test(codec)) return null;
     const factor = /H\.264/.test(codec) ? 1 : /AV1|VVC/.test(codec) ? 2 : /HEVC|VP9|Dolby Vision/.test(codec) ? 1.6 : 0;
     if (!factor) return null;
     const bpp = bps / (w * h * fps);
-    const adj = bpp * factor * Math.pow((w * h) / (1920 * 1080), 0.25);
-    const [, letter, word] = GRADES.find(([min]) => adj >= min);
-    const disc = adj / DISC_BPP;
-    return { bpp, adj, letter, word, disc: disc >= 0.95 ? 'about a Blu-ray’s' : disc >= 0.15 ? 'about ' + Math.round(disc * 10) * 10 + '% of a Blu-ray’s' : 'under 15% of a Blu-ray’s' };
+    return { bpp, adj: bpp * factor * Math.pow((w * h) / (1920 * 1080), 0.25) };
+  }
+  // Both grades for a figure that may be a range: hi is the figure graded, lo the low end when it is uncertain
+  // (null: no low end known, as with a peak figure). Uncertainty always shows, even when both ends share a letter.
+  function grades(hi, lo, uncertain, size) {
+    const span = (bands, f) => {
+      const a = letterOf(bands, f(hi.adj));
+      if (!uncertain) return { letter: a[1], word: a[2] || '', pct: pctText(f(hi.adj)) };
+      const p0 = pctText(f(hi.adj)), pct = /^under/.test(p0) ? p0 : 'up to ' + p0.replace(/^about /, '');
+      if (!lo) return { letter: a[1] === 'F' ? 'F' : a[1] + ' or lower', word: a[2] ? a[2] + ' or less' : '', pct };
+      const z = letterOf(bands, f(Math.max(0, lo.adj)));
+      const far = bands.indexOf(z) - bands.indexOf(a) > 1;
+      return { letter: a === z ? 'up to ' + a[1] : a[1] + (far ? ' to ' : ' or ') + z[1], word: a === z ? a[2] || '' : a[2] ? a[2] + (far ? ' to ' : ' or ') + z[2] : '', pct };
+    };
+    const ref = STREAM_REF[size];
+    return { bpp: hi.bpp, disc: span(GRADES, (x) => x / DISC_BPP), stream: ref ? span(SGRADES, (x) => x / ref) : null };
   }
 
   // What is drawn over the video or applied to it, read from the page's layout: effects (filter, opacity, blend) on the
@@ -1118,20 +1140,23 @@
       pictureRows.push(['Bitrate', mbps(m.rate) + ', measured', ...judgeBitrate(m.rate, playTag, codec, true)]);
       (videoBps = m.rate), (gradeHow = 'measured; varies by scene');
     }
-    const grade = dataGrade(videoBps, vw, vh, fps, codec);
-    const gradeLow = grade && lowBps > 0 && lowBps < videoBps ? dataGrade(lowBps, vw, vh, fps, codec) : null;
-    if (grade && gradeLow && gradeLow.letter !== grade.letter) {
-      const far = GRADES.findIndex((g) => g[1] === gradeLow.letter) - GRADES.findIndex((g) => g[1] === grade.letter) > 1;
-      grade.letter = grade.letter + (far ? ' to ' : ' or ') + gradeLow.letter;
-      grade.word = grade.word + (far ? ' to ' : ' or ') + gradeLow.word;
-      if (!/^under/.test(grade.disc)) grade.disc = 'up to ' + grade.disc.replace(/^about /, '');
-    }
+    const hiG = dataGrade(videoBps, vw, vh, fps, codec);
+    const fromList = /^listed/.test(gradeHow);
+    const peakOnly = fromList && listed.some((v) => v.peak) && videoBps === Math.max(...listed.map((v) => v.bps));
+    if (peakOnly) gradeHow = gradeHow.replace(/^listed/, 'listed peak');
+    const rangeKnown = fromList && lowBps < videoBps;
+    const loG = rangeKnown ? (lowBps > 0 ? dataGrade(lowBps, vw, vh, fps, codec) : { adj: 0 }) : null;
+    const grade = hiG ? grades(hiG, peakOnly ? null : loG, rangeKnown || peakOnly, tag(vw, vh)) : null;
     if (grade) {
+      const how = ' (' + gradeHow + (listedFps ? '' : ', rough frame rate') + ')';
+      const sg = grade.stream, dg = grade.disc;
+      if (sg) pictureRows.push(['Streaming grade', sg.letter + ' · ' + sg.word, /[DF]$/.test(sg.letter) ? 'note' : 'normal', sg.pct + ' of a high ' + playTag + ' streaming reference; codec-adjusted' + how + '. A rough data guide, not a picture-quality measurement.']);
+      else pictureRows.push(['Streaming grade', 'reference unavailable', '', 'no high streaming reference for ' + playTag]);
       pictureRows.push([
-        'Data grade',
-        grade.letter + ' · ' + (/ (or|to) /.test(grade.letter) ? 'up to ' : '') + grade.bpp.toFixed(3) + ' bits per pixel',
-        /^F/.test(grade.letter) ? 'unusual' : /[DF]$/.test(grade.letter) ? 'note' : 'normal',
-        grade.word + '; ' + grade.disc + ' data, codec-adjusted (' + gradeHow + (listedFps ? '' : ', rough frame rate') + '); a rough guide',
+        'Disc grade',
+        dg.letter + ' · ' + dg.pct + ' of the Blu-ray reference',
+        /F$/.test(dg.letter) && !/ /.test(dg.letter) ? 'unusual' : /[DF]$/.test(dg.letter) ? 'note' : 'normal',
+        (/ /.test(dg.letter) ? 'up to ' : '') + grade.bpp.toFixed(3) + ' bits per pixel; compared with 1080p H.264 at 30 Mbps and 24 fps; codec-adjusted' + how + '. A rough data guide.',
       ]);
     }
     const ov = overlays(video);
@@ -1242,7 +1267,13 @@
     }
     if (missingHdr) picNow = pv + ' · ' + hdrPlayable[0].range + ' sent at this size; ' + B + ' can play it';
     if (hdUnconfirmed) picNow = pv + ' · within ' + S + '’s “HD”; its top size isn’t published';
-    if (grade) picNow += ' · grade ' + grade.letter + ' (' + grade.word + '; ' + grade.disc + ' data)';
+    // Andy asked for each grade's letter, meaning and percent on the scorecard (21 Oct 2026).
+    let picNote = '';
+    if (grade) {
+      const sg = grade.stream, dg = grade.disc;
+      picNow += (sg ? ' · streaming ' + sg.letter : '') + ' · disc ' + dg.letter;
+      picNote = (sg ? 'Streaming ' + sg.letter + ': ' + sg.word + ', ' + sg.pct + ' of a high ' + playTag + ' stream. ' : '') + 'Disc ' + dg.letter + ': ' + dg.pct + ' of a Blu-ray. Rough data grades' + (rankOf(playTag) < RANK['4K'] ? '; some films and shows stream in 4K.' : '.');
+    }
     let picMark, picKind = '';
     const picSteps = [];
     const macRoute = !!(pcPic && pcPic.mac && pcPic.mac !== 'any' && pcPic.mac !== b && pcRank > Math.max(rankOf(playTag), rankOf(bestHere)) && (!capRank || capRank < pcRank));
@@ -1327,7 +1358,7 @@
     }
 
     let rows = [
-      { part: 'Picture', mark: picMark, now: picNow, cmp: pcPic ? pcPic.cmp : 'Computer best: unknown', steps: picSteps, kind: picKind },
+      { part: 'Picture', mark: picMark, now: picNow, note: picNote, cmp: pcPic ? pcPic.cmp : 'Computer best: unknown', steps: picSteps, kind: picKind },
       { part: 'Sound', mark: sndMark, now: sndNow, cmp: sndCmp, steps: sndSteps, kind: sndKind },
       { part: 'Playback', mark: pbMark, now: pbNow, cmp: pbCmp, steps: pbSteps, kind: pbKind },
     ].map((row, i) => ((row.i = i), row));
@@ -1430,6 +1461,9 @@
     'border:1px solid rgba(238,233,224,.13);box-shadow:0 12px 32px rgba(0,0,0,.42);' +
     'color:#EEE9E0;font:12.5px/1.42 "Avenir Next",-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}' +
     '.p,.p *{pointer-events:none}.p summary,.p summary *{pointer-events:auto;cursor:pointer}' +
+    // A short window: while Details is closed, the summary rows give way (clipped) so Details itself stays visible.
+    '.p{display:flex;flex-direction:column}.p[hidden]{display:none}.p .head{flex:0 1 auto;min-height:0;overflow:hidden}.p .more{flex:none}' +
+    '.p:has(details[open]) .head{flex:none;overflow:visible}' +
     '.p:has(details[open]){pointer-events:auto;overflow:auto}.p:has(details[open]),.p:has(details[open]) *{pointer-events:auto}' +
     '.kick{font:600 11px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#A39D93;margin-bottom:5px}' +
     '.t{font:600 18px/1.22 "Avenir Next",system-ui,sans-serif;letter-spacing:-.005em}' +
@@ -1478,7 +1512,7 @@
       const m = MARK[row.mark];
       const mark = m ? '<span class="m ' + row.mark + '" title="' + escHtml(m[1]) + '" aria-label="' + escHtml(m[1]) + '">' + m[0] + '</span>' : '<span></span>';
       const steps = row.steps && row.steps.length ? '<ol class="steps s2">' + row.steps.map((s) => '<li>' + escHtml(s) + '</li>').join('') + '</ol>' : '';
-      return '<div class="r2">' + mark + '<span class="k">' + escHtml(row.part) + '</span><span class="v">' + escHtml(row.now) + (row.cmp ? '<span class="cmp">' + escHtml(row.cmp) + '</span>' : '') + steps + '</span></div>';
+      return '<div class="r2">' + mark + '<span class="k">' + escHtml(row.part) + '</span><span class="v">' + escHtml(row.now) + (row.note ? '<span class="cmp">' + escHtml(row.note) + '</span>' : '') + (row.cmp ? '<span class="cmp">' + escHtml(row.cmp) + '</span>' : '') + steps + '</span></div>';
     };
     const quiet = r.quiet && r.quiet.length ? '<div class="quiet q2">' + r.quiet.map(([k, v]) => '<div><b>' + escHtml(k) + '</b> ' + escHtml(v) + '</div>').join('') + '</div>' : '';
     return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="t">' + escHtml(r.title) + '</div><div class="sub">' + escHtml(r.sub || '') + '</div><div class="rows">' + r.rows.map(one).join('') + '</div>' + quiet;
@@ -1624,8 +1658,9 @@
     if (!panelOpen) return;
     const seenKeys = new Map();
     // Each line keeps the tallest it has been, so a line that wraps to two and back doesn't move the ones below.
-    for (const el of p.querySelectorAll('.r2, .quiet > div, .det .row')) {
-      let key = el.className + ':' + ((el.querySelector('.k, b') || {}).textContent || '');
+    for (const el of p.querySelectorAll('.r2, .r2 .cmp, .quiet > div, .det .row')) {
+      const own = el.classList.contains('cmp') ? el.closest('.r2') : el;
+      let key = el.className + ':' + ((own.querySelector('.k, b') || {}).textContent || '');
       seenKeys.set(key, (seenKeys.get(key) || 0) + 1);
       key += '#' + seenKeys.get(key); // Picture and Sound both have Playing and Top sent
       const h = Math.max(lineHeights.get(key) || 0, el.getBoundingClientRect().height);

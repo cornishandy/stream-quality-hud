@@ -58,7 +58,8 @@ const B = '(Chrome|Safari)';
 const cases = [
   ['DASH, 720p playing', 'mse.html?rep=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /players start low; give it a minute/, /matched to its downloads/, /Playing\s+1280×720 \(720p\), H\.264/, /Top sent\s+1920×1080, H\.264, 6\.0 Mbps/, /3 versions, all SDR \(DASH\)/, /Bitrate\s+3\.0 Mbps listed/]],
   ['DASH, 1080p playing', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari)/, /Source\s+adaptive stream \(Media Source\)/]],
-  ['data grade: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari) · grade C \(typical streaming; about 20% of a Blu-ray’s data\)/, /Data grade\s+C · 0\.121 bits per pixel[^\n]*typical streaming; about 20% of a Blu-ray’s data[^\n]*\nNormal/, /Overlays\s+none found[^\n]*\nNormal/]],
+  ['grades: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari) · streaming C · disc C\n/, /Streaming C: moderate data, about 50% of a high 1080p stream\. Disc C: about 20% of a Blu-ray\. Rough data grades; some films and shows stream in 4K\./, /Streaming grade\s+C · moderate data[^\n]*about 50% of a high 1080p streaming reference; codec-adjusted \(listed\)\. A rough data guide, not a picture-quality measurement\.\nNormal/, /Disc grade\s+C · about 20% of the Blu-ray reference[^\n]*0\.121 bits per pixel; compared with 1080p H\.264 at 30 Mbps and 24 fps[^\n]*\nNormal/, /Overlays\s+none found[^\n]*\nNormal/]],
+  ['grades: 3 Mbps H.264 at 720p, against the 720p reference', 'mse.html?rep=1', [/· streaming B · disc C\n/, /Streaming B: solid data, about 70% of a high 720p stream/]],
   ['a player shade and subtitles are listed over the video', 'mse.html?rep=2&overlay=1', [/Over the video: shading over 37%, up to 60% dark; subtitles\./, /Overlays\s+shading over 37%, up to 60% dark; subtitles[^\n]*\nNote/]],
   ['a filter on the video is called out', 'mse.html?rep=2&filter=1', [/Over the video: video filter brightness\(0\.8\)\./, /Overlays\s+video filter brightness\(0\.8\)the page changes the picture itself\nUnusual/]],
   ['DASH film plus a trailer list: downloads pick the film', 'mse.html?rep=1&trailer=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /matched to its downloads/, /\(DASH\)/]],
@@ -134,6 +135,27 @@ async function serviceCase(label, ctx, page, url, pats, notPats = []) {
 }
 
 const BANNED = /\bthe site\b|\bthis site\b|\bthe list\b|pixel for pixel|bottleneck|\bfix\b|\bno list\b|(?<!stream )\blist goes\b|\bconfirmed list\b|\bin the list\b/i;
+async function shortWindow(label, page) {
+  // A short window (1280×600): the closed panel clips its summary rows, never the Details control, and a real click opens it.
+  const was = page.viewportSize();
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.goto(BASE + 'mse.html?rep=2');
+  await page.waitForFunction(() => document.title === 'playing' || document.title.startsWith('error'), null, { timeout: 15000 });
+  await page.waitForTimeout(2000);
+  await page.keyboard.press('Control+Shift+KeyH');
+  await page.waitForTimeout(6000);
+  const at = await page.evaluate(() => {
+    const root = document.querySelector('[data-stream-quality-hud]').shadowRoot;
+    const p = root.querySelector('.p').getBoundingClientRect(), s = root.querySelector('summary').getBoundingClientRect();
+    return { inside: s.height > 0 && s.top >= p.top && s.bottom <= p.bottom, x: s.x + s.width / 2, y: s.y + s.height / 2 };
+  });
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(500);
+  const opened = await page.evaluate(() => document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('details').open);
+  check(`${label}: in a short window Details stays visible and opens with a click`, at.inside && opened, JSON.stringify({ at, opened }));
+  await page.setViewportSize(was);
+}
+
 async function steadyLayout(label, page) {
   await open(page, 'mse.html?rep=2&blink=1');
   const samples = [];
@@ -366,6 +388,7 @@ async function timingChecks(engine, label) {
   page.on('pageerror', (e) => errors.push(String(e)));
   await runCases('Chromium', page, [...cases, ...crossOrigin], errors);
   await steadyLayout('Chromium', page);
+  await shortWindow('Chromium', page);
   await soundCases('Chromium', page, errors);
   {
     const sdr = !(await page.evaluate(() => matchMedia('(dynamic-range: high)').matches));
@@ -467,6 +490,7 @@ async function timingChecks(engine, label) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await steadyLayout('WebKit', page);
+  await shortWindow('WebKit', page);
   await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /only version sent to Safari|top of \d+ sent to Safari|sent Safari up to|top Safari can play/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
   await soundCases('WebKit', page, errors);
   {
@@ -479,6 +503,13 @@ async function timingChecks(engine, label) {
     const text = (await open(pageB, 'mse.html?rep=2&audio=1')) || '(no HUD)';
     check('WebKit: an unknown playing bitrate is never called worse than the same codec at a known one', /only version sent to Safari|top of \d+ sent to Safari/.test(text) && !/\bPick /.test(text) && !/Better sound sent/.test(text) && /id="6"/.test(mpd), '--- HUD ---\n' + text);
     await ctxB.close();
+  }
+  {
+    // No frame rate in the list: the grade waits for a measured one, so give it a few seconds.
+    const pats = [/· streaming [A-E] or lower · disc [A-E] or lower\n/, /Streaming grade\s+[A-E] or lower · [a-z ]+ data or less[^\n]*up to \d+% of a high 720p streaming reference; codec-adjusted \(listed peak/];
+    let text = (await open(page, 'hlspeak.html')) || '(no HUD)';
+    for (let i = 0; i < 6 && !pats.every((p) => p.test(text)); i++) (await page.waitForTimeout(1000)), (text = (await hudText(page)) || '(no HUD)');
+    check('WebKit: a list with only peak bitrates grades as an upper bound', pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   }
   {
     const pats = [/720p(?: SDR)? · only version sent to Safari/, /AAC stereo · (only|top) track sent to Safari/, /Playing\s+AAC stereo, 48 kHz/, /After this\s+Movie Sound, if on/];
