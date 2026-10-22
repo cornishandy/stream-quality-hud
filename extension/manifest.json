@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Stream Quality HUD",
-  "version": "1.8.0",
-  "description": "Shows what a streaming video is really playing and how it compares with the best the service offers any computer. A button over the video, Control+Shift+H or the toolbar button opens it.",
+  "version": "1.9.0",
+  "description": "Shows current playback, streaming and disc data grades, and relevant playback issues. Click the video pill or press Control+Shift+H.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",

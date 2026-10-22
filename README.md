@@ -1,23 +1,19 @@
 # Stream Quality HUD
 
-A small panel over streaming video that says what is really playing, and whether it's the best version you can get. It works in Chrome as an extension and in Safari as a userscript.
+A small panel over streaming video that shows what is playing, compares its data with high streaming and disc references, and flags supported playback issues. It works in Chrome as an extension and in Safari as a userscript.
 
-![The HUD on Netflix in Chrome: 1080p is the most Netflix sends Chrome; Safari gets 4K HDR](screenshots/A-chrome-netflix.png)
+![The compact HUD with streaming and disc grades](screenshots/compact-grades.png)
 
 Most streaming players never say which version they picked. Chrome often gets a lower tier than Safari on a Mac, and the player's own menu won't tell you. The HUD reads what the browser already knows about the video and the stream list the service sent, then puts the conclusion in plain words:
 
-- **A button over the video** states the conclusion. It shows on a known service, or on a video of 10 minutes or more, and fades after 3 seconds of idle while the video plays. Click it, press **Control+Shift+H**, or use the toolbar button to open the panel.
-- **Three rows:** Picture, Sound and Playback. Each has a mark, what is playing now, and a muted line for the best that service publishes for any computer. The row that needs a step shows it.
-- **Marks:** ▲ better on this Mac, ◇ worth trying, – top sent, ✓ computer best, ? unknown.
-- Unestablished limits read “unknown”. Prime Video’s unnumbered HD needs 1080p for ✓; mono does not match stereo.
-- **Two grades:** a streaming grade (this size's data against a high streaming reference at the same size, A generous to F very lean) and a disc grade (against a Blu-ray), each with its percent. They're rough data guides, not measurements of what you see.
-- **Overlays:** what the page draws over the video (shading, subtitles, controls, solid layers) and any filter or opacity applied to it.
-- **Sound:** when the stream list has a better track than the one playing, the HUD says the service's player chose it. Web players usually don't let you pick the format.
-- **Details**, closed until you open it, keeps the full Picture, Sound and Playback readout. Each of those rows is still judged **Normal**, **Unusual** or **Note**.
+- **A button over the video** shows the playing picture or a supported issue. It shows on a known service, or on a video of 10 minutes or more, and fades after 3 seconds of idle while the video plays. Click it, press **Control+Shift+H**, or use the toolbar button to open the panel.
+- **Picture first:** decoded resolution and colour range, followed by two visible data grades. The Streaming grade compares this encode with a high streaming reference at the same size; Disc compares with a 1080p Blu-ray reference. Letters, meanings and percentages stay together. They estimate data generosity, not visible picture quality.
+- **When grades cannot be calculated**, the grade area names the missing input (video bitrate, frame rate or codec) instead of disappearing or guessing a letter.
+- **Sound in plain words:** Stereo means left and right channels; AAC is the audio format. A codec alone never proves a channel count. Missing sound information leaves no empty overview row.
+- **Relevant problems only:** the overview calls out a higher version actually sent for this video, a measured playback problem, or a page filter/solid obstruction. Static service ceilings, unsupported audio formats, normal overlays and processing caveats are in **Technical details**.
+- **One disclosure:** observed technical values stay available without a legend, repeated “Normal” badges or blank measurements. The panel scrolls when needed, including short windows; refresh preserves its scroll position and the disclosure's focus.
 
-| Safari, a better sound track exists | Chrome, still stepping up to 1080p | Safari, HDR available but SDR playing |
-|---|---|---|
-| ![](screenshots/B-safari-dash-sound.png) | ![](screenshots/C-chrome-dash-720p.png) | ![](screenshots/D-safari-not-hdr.png) |
+[Interactive examples](docs/preview.html) show both a graded stream and the visible reason when the inputs are unavailable. These examples use synthetic track evidence.
 
 ## Install
 
@@ -43,7 +39,7 @@ Most streaming players never say which version they picked. Chrome often gets a 
 
 - `extension/hud.js` is the whole HUD. It also runs on its own, without extension APIs, which is how the userscript works.
 - `tools/build-userscript.sh` rebuilds `dist/stream-quality-hud.user.js` from it.
-- **Tests:** 102 silent end-to-end checks, in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
+- **Tests:** 150 silent checks (102 integration and 48 overview/evidence checks), in headless Chromium (the real unpacked extension) and WebKit (the userscript). Every fixture is a synthetic test pattern, and every sound track is digital silence.
   ```
   npm install            # or set PLAYWRIGHT_FROM to a folder that already has playwright-core
   tools/serve-fixtures.sh
@@ -52,11 +48,11 @@ Most streaming players never say which version they picked. Chrome often gets a 
 
 ## Status
 
-- [x] Chrome extension (Manifest V3), 1.8.0
+- [x] Chrome extension (Manifest V3), 1.9.0
 - [x] Safari userscript, built from the same file
-- [x] Picture, Sound and Playback judged Normal / Unusual / Note
+- [x] Current picture, data grades, plain-language sound and technical details
 - [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
-- [x] 102/102 tests
+- [x] 150/150 checks
 - [ ] Chrome Web Store listing (not planned)
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for why it works the way it does.

@@ -1,3 +1,17 @@
+# Design decisions
+
+## 1.9.0: playback first
+22 Oct 2026, Andy requested drastic consolidation, visible grades, plain sound explanations, new references, and Astra/Gemini judgment. Both independently chose the compact inspector over grade-first hero letters.
+
+- **Hierarchy:** observed Picture → Data grades → observed Sound → supported issue → Technical details. No global “Nothing to change” conclusion from incomplete evidence. Service ceilings do not prove current-title eligibility, selectable sound, or an available upgrade.
+- **Grades stay findable:** show both letters with complete ranges/up-to bounds, meanings and percentages. Without inputs, name the actual blocker once. Missing/ambiguous/unsupported codec and absent size references are distinct; a valid Disc grade survives a missing Streaming reference. Math is unchanged from 1.8.0.
+- **Sound describes the stream:** stereo means two channels, left and right; AAC is its format. AAC alone is not stereo. Spatial audio is Netflix's title-dependent 2-channel mix, not a macOS switch. Service/device possibilities remain in Technical details.
+- **Evidence determines emphasis:** only current video's matched ladder or observed problems enter the overview. A Chrome→Safari service-wide ceiling, low grade, or 60 Hz page callbacks alone do not justify an upgrade instruction. Decoder support alone never proves a selectable audio track.
+- **HDR uncertainty remains uncertainty:** overview advice requires positive decoder support. An unreported codec does not mean the browser lacks it; the diagnostic fallback distinguishes `null` from `false` (Astra final gate caught this introduced branch error; targeted parser/capability cases now cover both engines).
+- **No absent-row placeholders or locked heights:** remove stale blank rows and the mechanism that caused WebKit's 64px Details jump. Persistent disclosure and focus, scroll restored after rendering. Overflow scrolls instead of clipping the grades. Normal, unknown and irrelevant diagnostics leave the overview; observed technical facts remain one disclosure deep.
+- **New design references inspected 22 Oct 2026:** [GOV.UK summary list](https://design-system.service.gov.uk/components/summary-list/default/index.html), rendered/screenshotted at 390px and 1280px: labels and values share clear edges, phone stacks values under labels. Borrow proximity, not full-page scale or edit links. [Apple disclosure controls](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls), rendered/screenshotted at both widths: essential controls visible, related detail behind a named disclosure. Borrow one disclosure, not branding/illustrations. Gemini additionally checked Fast.com live desktop DOM (primary result above supporting diagnostics); screenshot and mobile behavior were unverified there. T3 preview snapshots timed out twice; lead verified the other references with the repository's Playwright browser tooling.
+- **Tokens:** host system/Avenir typography, 22px current picture/grade, 13px body, 12px supporting labels. 352px panel with a common left edge, neutral nearly opaque overlay for reliable contrast. Colour indicates observed issues; no decorative grade badges. P1/P2/P3/P6/P7 from the shared principles library applied; overview scrolling is needed so small windows never clip essential facts.
+
 # Decisions
 
 Why the HUD works the way it does. Newest first.

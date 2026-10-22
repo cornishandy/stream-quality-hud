@@ -9,7 +9,7 @@ OUT="$ROOT/dist/stream-quality-hud.user.js"
   cat <<HEADER
 // ==UserScript==
 // @name         Stream Quality HUD
-// @description  Shows what a streaming video is really playing and how it compares with the best the service offers any computer. A button over the video or Control+Shift+H opens it.
+// @description  Shows current playback, streaming and disc data grades, and relevant playback issues. A button over the video or Control+Shift+H opens it.
 // @version      $VERSION
 // @match        *://*/*
 // @run-at       document-start

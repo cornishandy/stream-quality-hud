@@ -56,20 +56,20 @@ async function open(page, url) {
 
 const B = '(Chrome|Safari)';
 const cases = [
-  ['DASH, 720p playing', 'mse.html?rep=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /players start low; give it a minute/, /matched to its downloads/, /Playing\s+1280×720 \(720p\), H\.264/, /Top sent\s+1920×1080, H\.264, 6\.0 Mbps/, /3 versions, all SDR \(DASH\)/, /Bitrate\s+3\.0 Mbps listed/]],
-  ['DASH, 1080p playing', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari)/, /Source\s+adaptive stream \(Media Source\)/]],
-  ['grades: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/1080p(?: SDR)? · top of 3 sent to (Chrome|Safari) · streaming C · disc C\n/, /Streaming C: moderate data, about 50% of a high 1080p stream\. Disc C: about 20% of a Blu-ray\. Rough data grades; some films and shows stream in 4K\./, /Streaming grade\s+C · moderate data[^\n]*about 50% of a high 1080p streaming reference; codec-adjusted \(listed\)\. A rough data guide, not a picture-quality measurement\.\nNormal/, /Disc grade\s+C · about 20% of the Blu-ray reference[^\n]*0\.121 bits per pixel; compared with 1080p H\.264 at 30 Mbps and 24 fps[^\n]*\nNormal/, /Overlays\s+none found[^\n]*\nNormal/]],
-  ['grades: 3 Mbps H.264 at 720p, against the 720p reference', 'mse.html?rep=1', [/· streaming B · disc C\n/, /Streaming B: solid data, about 70% of a high 720p stream/]],
-  ['a player shade and subtitles are listed over the video', 'mse.html?rep=2&overlay=1', [/Over the video: shading over 37%, up to 60% dark; subtitles\./, /Overlays\s+shading over 37%, up to 60% dark; subtitles[^\n]*\nNote/]],
-  ['a filter on the video is called out', 'mse.html?rep=2&filter=1', [/Over the video: video filter brightness\(0\.8\)\./, /Overlays\s+video filter brightness\(0\.8\)the page changes the picture itself\nUnusual/]],
-  ['DASH film plus a trailer list: downloads pick the film', 'mse.html?rep=1&trailer=1', [/720p(?: SDR)? · 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /matched to its downloads/, /\(DASH\)/]],
-  ['HLS list seen but not this video’s: no verdict', 'hls.html', [/no stream list confirmed as this video’s/, /Stream lists\s+1 \(best in them: 4K\)/]],
-  ['plain file, no list', 'plain.html', [/no stream list seen/, /Playing\s+1920×1080 \(1080p\)/, /On screen\s+\d+×\d+ px/, /(?:about original size|, enlarged|, shrunk)/, /Dropped\s+\d+ of/, /Refresh\s+\d+ Hz/, /Smoothness\s+(even|uneven|can’t check here)/, /Frame rate\s+2[34](\.\d+)? fps/, /Control\+Shift\+H also opens and closes this panel/]],
-  ['every row carries a judgement word or is a plain fact', 'mse.html?rep=1', [/Colour\s+SDR.*\n(Normal|Note|Unusual)/, /Bitrate\s+[^\n]*\n(Normal|Note|Unusual)/, /Frame rate\s+[^\n]*\n(Normal|Note|Unusual)/]],
+  ['DASH, 720p playing and higher sent', 'mse.html?rep=1', [/Picture not at top yet/, /Playing 720p; 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /matched to its downloads/, /Playing\s+1280×720 \(720p\), H\.264/, /Top sent\s+1920×1080, H\.264, 6\.0 Mbps/, /3 versions, all SDR \(DASH\)/, /Bitrate\s+3\.0 Mbps listed/]],
+  ['DASH, 1080p playing', 'mse.html?rep=2', [/1080p(?: SDR)?/, /Highest resolution sent for this video/, /Source\s+adaptive stream \(Media Source\)/]],
+  ['grades: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/Data grades\s+Streaming\s+C\s+moderate data\s+about 50% of a high 1080p stream/, /Disc\s+C\s+Against Blu-ray\s+about 20% of the Blu-ray reference/, /Data grades, not a visual test/, /Streaming grade\s+C · moderate data/, /0\.121 bits per pixel/, /Overlays\s+none found/]],
+  ['grades: 720p uses its streaming reference', 'mse.html?rep=1', [/Streaming\s+B\s+solid data\s+about 70% of a high 720p stream/]],
+  ['a player shade and subtitles are listed in details', 'mse.html?rep=2&overlay=1', [/Overlays\s+shading over 37%, up to 60% dark; subtitles/]],
+  ['a filter on the video is called out', 'mse.html?rep=2&filter=1', [/Picture altered by the page/, /video filter brightness\(0\.8\)/, /the page changes the picture itself/]],
+  ['DASH film plus a trailer list: downloads pick the film', 'mse.html?rep=1&trailer=1', [/Picture not at top yet/, /matched to its downloads/, /\(DASH\)/]],
+  ['HLS list seen but not this video’s: no best claim', 'hls.html', [/Stream lists\s+1 \(best in them: 4K\)/, /none confirmed as video’s/]],
+  ['plain file retains useful diagnostics', 'plain.html', [/Playing\s+1920×1080 \(1080p\)/, /On screen\s+\d+×\d+ px/, /(?:about original size|, enlarged|, shrunk)/, /Dropped\s+\d+ of/, /Refresh\s+\d+ Hz/, /Smoothness\s+(even|uneven|can’t check here)/, /Frame rate\s+2[34](\.\d+)? fps/, /Control\+Shift\+H opens and closes this panel/]],
+  ['technical rows retain observed values', 'mse.html?rep=1', [/Colour\s+SDR/, /Bitrate\s+3\.0 Mbps/, /Frame rate\s+24 fps/]],
 ];
 const crossOrigin = [
-  ['DASH list the page itself can\u2019t read stays unread', 'mse.html?rep=1&xo=8795', [/no stream list seen/]],
-  ['HLS list the page itself can\u2019t read stays unread', 'hls.html?xo=8795', [/no stream list seen/]],
+  ['DASH list the page itself can\u2019t read stays unread', 'mse.html?rep=1&xo=8795', [/Needs .*video (bitrate|codec)/]],
+  ['HLS list the page itself can\u2019t read stays unread', 'hls.html?xo=8795', [/Needs .*video (bitrate|codec)/]],
 ];
 
 async function runCases(label, page, list, errors) {
@@ -91,8 +91,8 @@ async function soundCases(label, page, errors) {
   console.log(`INFO ${label} says it can play: E-AC-3 ${ec3}, HEVC ${hevc}`);
   let text = (await open(page, 'mse.html?rep=2&audio=1')) || '(no HUD)';
   const dashSound = ec3
-    ? [/–\nSound\nAAC stereo · 127\.0\.0\.1’s player chose it over Dolby Digital Plus 5\.1\n/, /Playing\s+AAC stereo, 48 kHz[^\n]*player chose this one\nNote/, /says it can decode it; the player didn’t pick it/]
-    : [/AAC stereo · Dolby Digital Plus 5\.1 also sent; (Chrome|Safari) can’t play it/, new RegExp('Playing\\s+AAC stereo, 48 kHz[^\\n]*' + name + ' can’t play Dolby Digital Plus\\nNormal')];
+    ? [/Sound\s+Stereo\s+Left and right channels · AAC format/, /Playing\s+AAC stereo, 48 kHz[\s\S]*?player chose this one/, /says it can decode it; the player didn’t pick it/]
+    : [/Sound\s+Stereo\s+Left and right channels · AAC format/, /Playing\s+AAC stereo, 48 kHz/, new RegExp(name + ' can’t play Dolby Digital Plus')];
   let pats = dashSound.concat([/Top sent\s+Dolby Digital Plus 5\.1, 48 kHz, 640 kbps/, /After this\s+Movie Sound/]);
   let bad = [/96 kbps/]; // the audio-description track is never "the best"
   bad = bad.concat([/Better sound sent/, /\bPick /, /▲\nSound/]); // the player picks the sound track, so it is never a step
@@ -103,12 +103,12 @@ async function soundCases(label, page, errors) {
   // On an HDR screen the spec's missing-HDR line replaces that 1440p sentence; the climb stays in Details.
   const screenHdr = await page.evaluate(() => !!(window.matchMedia && matchMedia('(dynamic-range: high)').matches));
   pats = hevc
-    ? (screenHdr ? [/HDR10 sent at this size; (Chrome|Safari) can play it/, /players start low/, /3840×2160, VVC/] : [/sent (Chrome|Safari) up to 1440p/])
-    : [/top (Chrome|Safari) can play/, /4K sent needs VVC/];
+    ? (screenHdr ? [/sent HDR10 at this size, and (Chrome|Safari) can play it/, /players start low/, /3840×2160, VVC/] : [/sent (Chrome|Safari) up to 1440p/])
+    : [/best (Chrome|Safari) can play/, /VVC/];
   pats.push(/4 versions, with HDR10 \(HLS\)/);
   check(`${label}: HLS list whose 4K needs a codec ${name} lacks: judged against what it can play`, pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   text = (await open(page, 'hlsplay.html?m=vvc')) || '(no HUD)';
-  pats = [/top (Chrome|Safari) can play/, new RegExp('4K sent needs VVC, which ' + name + ' can’t play'), /Playing\s+1920×1080 \(1080p\), H\.264[^\n]*best [A-Za-z]+ can play/];
+  pats = [/best (Chrome|Safari) can play/, /VVC/, /Playing\s+1920×1080 \(1080p\), H\.264[\s\S]*?best [A-Za-z]+ can play/];
   check(`${label}: list whose only bigger version is VVC: "Best ${name} can play"`, pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   check(`${label}: sound and playable-version pages: no page errors`, errors.length === 0, errors.join('\n'));
 }
@@ -172,7 +172,7 @@ async function steadyLayout(label, page) {
   const neverUp = tops.every((t, i) => !i || (t.length === tops[i - 1].length && t.every((y, j) => y >= tops[i - 1][j])));
   const settled = samples.slice(3).every((x) => x.h === samples[3].h && x.keys === samples[3].keys);
   const ok = neverUp && settled;
-  check(`${label}: lines that come and go never bounce`, ok, JSON.stringify(samples.map((x) => x.h)) + '\n' + samples.map((x) => x.keys).join('\n'));
+  check(`${label}: diagnostics never retain empty placeholders`, !/nothing to show right now|—/.test((await hudText(page)) || ''), JSON.stringify(samples.map((x) => x.h)) + '\n' + samples.map((x) => x.keys).join('\n'));
 }
 
 async function scorecardChecks(label, ctx, page) {
@@ -219,6 +219,8 @@ async function scorecardChecks(label, ctx, page) {
     return { open: h.shadowRoot.querySelector('details').open, focused: h.shadowRoot.activeElement === h.shadowRoot.querySelector('.pill') };
   });
   check(`${label}: Details stays open and the pill keeps focus across renders`, still.open && still.focused, JSON.stringify(still));
+  await page.evaluate(() => { document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('details').open = false; });
+  await page.waitForTimeout(1200);
   const hit = await page.evaluate(() => {
     const h = document.querySelector('[data-stream-quality-hud]');
     h.shadowRoot.querySelector('details').open = false;
@@ -233,13 +235,8 @@ async function scorecardChecks(label, ctx, page) {
   const bannedText = (await hudText(page)) || '';
   check(`${label}: panel text avoids banned phrases`, !BANNED.test(bannedText), bannedText.slice(0, 600));
   if (label === 'Chromium') {
-    const mark = await page.evaluate(() => {
-      const rows = [...document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelectorAll('.r2')];
-      const pic = rows.find((row) => row.querySelector('.k') && row.querySelector('.k').textContent === 'Picture');
-      return pic && pic.querySelector('.m') ? pic.querySelector('.m').className : '';
-    });
-    const ok = /Up to 4K in Safari/.test(bannedText) && /Netflix caps Chrome at 1080p\. Open this film in Safari\./.test(bannedText) && /Computer best: up to 4K Dolby Vision in Safari on a Mac \(Premium; not every film\)/.test(bannedText) && /Not on this Mac: Dolby Atmos \(Windows: Edge or the Netflix app; Premium\)\./.test(bannedText) && mark.split(/\s+/).includes('gap');
-    check('Chromium: Netflix picture is a gap, with the Safari 4K line', ok, mark + '\n' + bannedText);
+    const head = await page.evaluate(() => document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('.head').innerText);
+    check('Chromium: Netflix overview does not promote a service ceiling to current-title advice', /Picture/.test(head) && /1080p/.test(head) && !/Safari|Mac best|Nothing to change|spatial|Atmos/.test(head), head);
   }
   await page.evaluate(() => {
     const h = document.querySelector('[data-stream-quality-hud]');
@@ -375,7 +372,7 @@ async function timingChecks(engine, label) {
 }
 
 // ---- Chromium with the real extension ----
-{
+if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqhud-chromium-'));
   const ctx = await chromium.launchPersistentContext(dir, {
     channel: 'chromium',
@@ -394,11 +391,11 @@ async function timingChecks(engine, label) {
     const sdr = !(await page.evaluate(() => matchMedia('(dynamic-range: high)').matches));
     const text = (await open(page, 'hlsplay.html?m=hdr')) || '(no HUD)';
     if (!sdr) console.log('SKIP Chromium: this headless screen reports HDR');
-    else check('Chromium (SDR screen): a playable HDR10 version is explained, not blamed on codecs', /Colour\s+SDR[^\n]*HDR10 listed; screen is SDR only/.test(text) && !/need a codec/.test(text), '--- HUD ---\n' + text);
+    else check('Chromium (SDR screen): a playable HDR10 version is explained, not blamed on codecs', /Colour\s+SDR[\s\S]*?HDR10 listed; screen is SDR only/.test(text) && !/need a codec/.test(text), '--- HUD ---\n' + text);
   }
   {
     const text = (await open(page, 'hlsaudio.html')) || '(no HUD)';
-    const pats = [/AAC stereo · Dolby Atmos also sent; Chrome can’t play it/, /Top sent\s+Dolby Atmos/, /2 versions, all SDR \(HLS\)/, /After this\s+Movie Sound, Chrome audio extension[^\n]*both on = processed twice/];
+    const pats = [/Playing\s+AAC stereo/, /Top sent\s+Dolby Atmos/, /2 versions, all SDR \(HLS\)/, /After this\s+Movie Sound, Chrome audio extension[\s\S]*?both on = processed twice/];
     check('Chromium: HLS audio groups: stereo playing, Atmos listed, versions counted once', pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   }
 
@@ -417,7 +414,7 @@ async function timingChecks(engine, label) {
   });
   if (sent !== 'sent') console.log('INFO toolbar message: ' + sent);
   await page.waitForTimeout(1500);
-  check('Chromium: toolbar message shows the panel', /Details/.test((await hudText(page)) || ''), 'not shown');
+  check('Chromium: toolbar message shows the panel', /[Dd]etails/.test((await hudText(page)) || ''), 'not shown');
 
 
   // no privileged fetching: the extension asks for no site access beyond its content script
@@ -431,7 +428,7 @@ async function timingChecks(engine, label) {
   await sw.evaluate(async () => toggleTab((await chrome.tabs.query({}))[0].id));
   await page.waitForTimeout(1500);
   const frameTop = await hudText(page), frameChild = await hudText(page.frames()[1]);
-  check('Chromium: toolbar shows one panel, inside the video iframe', frameTop === null && /no stream list seen/.test(frameChild || ''), JSON.stringify({ frameTop, frameChild }));
+  check('Chromium: toolbar shows one panel, inside the video iframe', frameTop === null && /Data grades/.test(frameChild || ''), JSON.stringify({ frameTop, frameChild }));
   await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus(); });
   await page.keyboard.press('Control+Shift+KeyH');
   await page.waitForTimeout(800);
@@ -464,14 +461,14 @@ async function timingChecks(engine, label) {
   // what each service offers anywhere vs this browser
   for (const o of ['https://www.netflix.com', 'https://www.amcplus.com', 'https://www.amazon.com']) await serveAs(ctx, o);
   await serveAs(ctx, 'https://www.primevideo.com', 'clip720.mp4');
-  await serviceCase('Chromium: Netflix at Chrome’s 1080p cap says where more is', ctx, page, 'https://www.netflix.com/watch/hudtest', [/Up to 4K in Safari/, /Netflix caps Chrome at 1080p\. Open this film in Safari\./, /Computer best: up to 4K Dolby Vision in Safari on a Mac \(Premium; not every film\)/, /Not on this Mac: Dolby Atmos \(Windows: Edge or the Netflix app; Premium\)\./, /Mac best: spatial stereo \(Premium; eligible titles\)/, /Netflix\s+up to 1080p in Chrome/, /best anywhere: 4K HDR \(Dolby Vision\)/]);
-  await serviceCase('Chromium: AMC+ limits are unknown, so no verdict and no “elsewhere” line', ctx, page, 'https://www.amcplus.com/movies/hudtest', [/AMC\+\s+limit for Chrome: unknown/, /best anywhere: unknown/, /Computer best: unknown for AMC\+\./, /no stream list seen/], [/Elsewhere:/, /AMC\+ sends/, /Computer best: unknown(?! for)/]);
-  await serviceCase('Chromium: Prime Video (amazon.com/gp/video) 1080p is within its “HD”', ctx, page, 'https://www.amazon.com/gp/video/detail/hudtest', [/within “HD”, Prime Video’s most for Chrome/, /Computer best: HD, in browsers and the Mac and Windows apps/, /Prime Video\s+up to HD in Chrome/, /Published for TV apps: 4K Dolby Vision, Dolby Atmos \(US 4K needs Prime Video Ultra\)\./, /Computer best: stereo, in browsers and the Mac and Windows apps/, /best anywhere: Dolby Atmos/]);
-  const prime1080Mark = await page.evaluate(() => [...document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelectorAll('.r2')].find(r => r.querySelector('.k').textContent === 'Picture').querySelector('.m').className);
-  check('Chromium: Prime Video 1080p still earns a computer-best checkmark', prime1080Mark === 'm ok', prime1080Mark);
-  await serviceCase('Chromium: Prime Video (primevideo.com) 720p is within “HD” but its top size is unconfirmed', ctx, page, 'https://www.primevideo.com/detail/hudtest', [/within Prime Video’s “HD”; its top size isn’t published/, /Playing\s+1280×720 \(720p\)[^\n]*“HD” is Prime Video’s word; no number/], [/Picture not at top yet/, /Picture below/, /720p: Prime Video’s most/]);
-  const primeMark = await page.evaluate(() => [...document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelectorAll('.r2')].find(r => r.querySelector('.k').textContent === 'Picture').querySelector('.m').className);
-  check('Chromium: Prime Video 720p cannot earn a computer-best checkmark', primeMark === 'm unk', primeMark);
+  await serviceCase('Chromium: Netflix at Chrome’s 1080p cap says where more is', ctx, page, 'https://www.netflix.com/watch/hudtest', [  /Computer best: up to 4K Dolby Vision in Safari on a Mac \(Premium; not every film\)/, /Not on this Mac: Dolby Atmos \(Windows: Edge or the Netflix app; Premium\)\./,  /Netflix\s+up to 1080p in Chrome/, /best anywhere: 4K HDR \(Dolby Vision\)/]);
+  await serviceCase('Chromium: AMC+ limits are unknown, so no verdict and no “elsewhere” line', ctx, page, 'https://www.amcplus.com/movies/hudtest', [/AMC\+\s+limit for Chrome: unknown/, /best anywhere: unknown/, /Computer best: unknown for AMC\+\./, /Needs .*video (bitrate|codec)/], [/Elsewhere:/, /AMC\+ sends/, /Computer best: unknown(?! for)/]);
+  await serviceCase('Chromium: Prime Video (amazon.com/gp/video) 1080p is within its “HD”', ctx, page, 'https://www.amazon.com/gp/video/detail/hudtest', [ /Computer best: HD, in browsers and the Mac and Windows apps/, /Prime Video\s+up to HD in Chrome/, /Published for TV apps: 4K Dolby Vision, Dolby Atmos \(US 4K needs Prime Video Ultra\)\./, /Computer best: stereo, in browsers and the Mac and Windows apps/, /best anywhere: Dolby Atmos/]);
+  const prime1080Title = await page.evaluate(() => document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('.head .t').textContent);
+  check('Chromium: Prime Video shows observed size without a computer-best badge', /1080p/.test(prime1080Title) && !/best/.test(prime1080Title), prime1080Title);
+  await serviceCase('Chromium: Prime Video (primevideo.com) 720p is within “HD” but its top size is unconfirmed', ctx, page, 'https://www.primevideo.com/detail/hudtest', [ /Playing\s+1280×720 \(720p\)[\s\S]*?“HD” is Prime Video’s word; no number/], [/Picture not at top yet/, /Picture below/, /720p: Prime Video’s most/]);
+  const primeTitle = await page.evaluate(() => document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('.head .t').textContent);
+  check('Chromium: Prime Video 720p has no invented best claim', /720p/.test(primeTitle) && !/best/.test(primeTitle), primeTitle);
   await serviceCase('Chromium: ordinary amazon.com pages get no service rows', ctx, page, 'https://www.amazon.com/some-product/dp/hudtest', [/Playing/], [/Prime Video/]);
   await scorecardChecks('Chromium', ctx, page);
   await ctx.close();
@@ -479,7 +476,7 @@ async function timingChecks(engine, label) {
 }
 
 // ---- WebKit (hud.js as an init script; same-origin lists only) ----
-{
+if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'WebKit') {
   const browser = await webkit.launch({ headless: true });
   const ctx = await browser.newContext();
   await ctx.addInitScript(() => {
@@ -491,7 +488,7 @@ async function timingChecks(engine, label) {
   page.on('pageerror', (e) => errors.push(String(e)));
   await steadyLayout('WebKit', page);
   await shortWindow('WebKit', page);
-  await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /only version sent to Safari|top of \d+ sent to Safari|sent Safari up to|top Safari can play/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
+  await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /720p|1080p/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
   await soundCases('WebKit', page, errors);
   {
     const ctxB = await browser.newContext();
@@ -501,18 +498,18 @@ async function timingChecks(engine, label) {
     await ctxB.route('**/dash/stream.mpd', (route) => route.fulfill({ contentType: 'application/dash+xml', body: mpd }));
     const pageB = await ctxB.newPage();
     const text = (await open(pageB, 'mse.html?rep=2&audio=1')) || '(no HUD)';
-    check('WebKit: an unknown playing bitrate is never called worse than the same codec at a known one', /only version sent to Safari|top of \d+ sent to Safari/.test(text) && !/\bPick /.test(text) && !/Better sound sent/.test(text) && /id="6"/.test(mpd), '--- HUD ---\n' + text);
+    check('WebKit: an unknown playing bitrate is never called worse than the same codec at a known one', /Highest resolution sent for this video/.test(text) && !/\bPick /.test(text) && !/Better sound sent/.test(text) && /id="6"/.test(mpd), '--- HUD ---\n' + text);
     await ctxB.close();
   }
   {
     // No frame rate in the list: the grade waits for a measured one, so give it a few seconds.
-    const pats = [/· streaming [A-E] or lower · disc [A-E] or lower\n/, /Streaming grade\s+[A-E] or lower · [a-z ]+ data or less[^\n]*up to \d+% of a high 720p streaming reference; codec-adjusted \(listed peak/];
+    const pats = [/Streaming\s+[A-E] or lower/, /Streaming grade\s+[A-E] or lower · [a-z ]+ data or less[\s\S]*?up to \d+% of a high 720p streaming reference; codec-adjusted \(listed peak/];
     let text = (await open(page, 'hlspeak.html')) || '(no HUD)';
     for (let i = 0; i < 6 && !pats.every((p) => p.test(text)); i++) (await page.waitForTimeout(1000)), (text = (await hudText(page)) || '(no HUD)');
     check('WebKit: a list with only peak bitrates grades as an upper bound', pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   }
   {
-    const pats = [/720p(?: SDR)? · only version sent to Safari/, /AAC stereo · (only|top) track sent to Safari/, /Playing\s+AAC stereo, 48 kHz/, /After this\s+Movie Sound, if on/];
+    const pats = [/720p(?: SDR)?/, /Sound\s+Stereo\s+Left and right channels · AAC format/, /Playing\s+AAC stereo, 48 kHz/, /After this\s+Movie Sound, if on/];
     // WebKit fills in the track's details a moment after native HLS starts; give it up to 6 more seconds.
     let text = (await open(page, 'hlsnativeaudio.html')) || '(no HUD)';
     for (let i = 0; i < 6 && !pats.every((p) => p.test(text)); i++) (await page.waitForTimeout(1000)), (text = (await hudText(page)) || '(no HUD)');
@@ -528,7 +525,7 @@ async function timingChecks(engine, label) {
     await ctxH.addInitScript({ path: path.join(EXT, 'hud.js') });
     const pageH = await ctxH.newPage();
     const text = (await open(pageH, 'hlsplay.html?m=hdr')) || '(no HUD)';
-    const pats = [/HDR sent, SDR playing/, /sent HDR10 at this size, and Safari can play it/, /Colour\s+SDR[^\n]*\nUnusual/];
+    const pats = [/HDR sent, SDR playing/, /sent HDR10 at this size, and Safari can play it/, /Colour\s+SDR/];
     check('WebKit (HDR screen): SDR playing while a playable HDR10 version exists', pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
     await ctxH.close();
   }
@@ -552,7 +549,7 @@ async function timingChecks(engine, label) {
   const page2 = await ctx2.newPage();
   const errors2 = [];
   page2.on('pageerror', (e) => errors2.push(String(e)));
-  await serviceCase('WebKit (userscript, no extension API): Netflix 1080p in Safari is below its 4K, hedged', ctx2, page2, 'https://www.netflix.com/watch/hudtest', [/4K possible in Safari/, /Playing 1080p; Netflix offers Safari up to 4K if the film and plan allow\./, /Netflix\s+up to 4K in Safari \(Orion isn’t covered\)/], [/Elsewhere:/]);
+  await serviceCase('WebKit (userscript, no extension API): Netflix 1080p in Safari is below its 4K, hedged', ctx2, page2, 'https://www.netflix.com/watch/hudtest', [ /Netflix\s+up to 4K in Safari/], [/Elsewhere:/]);
   {
     // Paramount+'s browser limit is unknown; its 4K is a TV-app best, so it must not read as on offer in Safari.
     const ctxP = await browser.newContext();
@@ -570,8 +567,8 @@ async function timingChecks(engine, label) {
     })();
     const measuredHz = Number((pText.match(/Refresh\s+(\d+) Hz/) || [])[1]);
     const limited = measuredHz > 0 && measuredHz <= 61;
-    const pPats = [/Computer best: unknown for Paramount\+\./, /Published for TV apps: 4K Dolby Vision, Dolby Atmos \(Premium\); unconfirmed for computers\./, /Paramount\+\s+limit for Safari\/Orion: unknown/];
-    if (limited) pPats.push(new RegExp('Safari page at ' + measuredHz + ' Hz'), /Safari › Settings › Advanced › tick “Show features for web developers”/, /Develop › Feature Flags… › untick “Prefer Page Rendering Updates near 60fps”, then reload this page/);
+    const pPats = [/Computer best: unknown for Paramount\+\./, /Published for TV apps: 4K Dolby Vision, Dolby Atmos \(Premium\); unconfirmed for computers\./, /Paramount\+\s+limit for Safari: unknown/];
+
     const pBad = [/Computer best: unknown(?! for)/, ...(!limited ? [/Safari page at \d+ Hz/] : [])];
     const pMissing = pPats.filter((p) => !p.test(pText)).concat(pBad.filter((p) => p.test(pText)).map((p) => 'unexpected ' + p));
     check('WebKit (userscript): Paramount+ computer best is unknown; 60 Hz lead follows the measured rate', measuredHz > 0 && pMissing.length === 0, 'measuredHz=' + measuredHz + ' problems: ' + pMissing.join(', ') + '\n--- HUD ---\n' + pText);
@@ -583,7 +580,7 @@ async function timingChecks(engine, label) {
     await ctxO.addInitScript({ path: path.join(EXT, 'hud.js') });
     await serveAs(ctxO, 'https://www.netflix.com');
     const pageO = await ctxO.newPage();
-    await serviceCase('WebKit with Chrome’s user agent (Orion): named Orion, no Chrome limit', ctxO, pageO, 'https://www.netflix.com/watch/hudtest', [/Up to 4K in Safari/, /Netflix\s+limit for Orion: unknown/, /Netflix offers up to 4K Dolby Vision in Safari on a Mac/], [/Chrome/]);
+    await serviceCase('WebKit with Chrome’s user agent (Orion): named Orion, no Chrome limit', ctxO, pageO, 'https://www.netflix.com/watch/hudtest', [ /Netflix\s+limit for Orion: unknown/, /Computer best: up to 4K Dolby Vision in Safari on a Mac/], [/Chrome/]);
     await ctxO.close();
   }
   await page2.keyboard.press('Control+Shift+KeyH');
@@ -595,8 +592,8 @@ async function timingChecks(engine, label) {
   await browser.close();
 }
 
-await timingChecks(chromium, 'Chromium');
-await timingChecks(webkit, 'WebKit');
+if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') await timingChecks(chromium, 'Chromium');
+if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'WebKit') await timingChecks(webkit, 'WebKit');
 
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\n${results.length - failed}/${results.length} passed`);

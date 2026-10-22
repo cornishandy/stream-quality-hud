@@ -1,16 +1,15 @@
 // ==UserScript==
 // @name         Stream Quality HUD
-// @description  Shows what a streaming video is really playing and how it compares with the best the service offers any computer. A button over the video or Control+Shift+H opens it.
-// @version      1.8.0
+// @description  Shows current playback, streaming and disc data grades, and relevant playback issues. A button over the video or Control+Shift+H opens it.
+// @version      1.9.0
 // @match        *://*/*
 // @run-at       document-start
 // @inject-into  content
 // ==/UserScript==
 
-// Stream Quality HUD: shows what the page's main <video> is playing (picture and sound) and how it compares
-// with the best the service offers any computer. A pill over the video states the conclusion; it, Control+Shift+H
-// or the toolbar button opens the panel (Picture, Sound and Playback rows, then Details, where each line is
-// judged Normal, Unusual or Note). It only reads; it never touches the sound.
+// Stream Quality HUD: current picture, codec-adjusted data grades and plain-language sound.
+// Supported playback issues appear in the overview; service/device possibilities and diagnostic
+// measurements live under Technical details. It only reads; it never touches the sound.
 // (Control+Option+Shift combinations never reach web pages on Andy's Mac, so the key avoids Option.)
 //
 // How it knows "the best version": the page's player downloads a quality list (a DASH .mpd or an
@@ -677,7 +676,7 @@
     return '';
   }
   // Orion reports itself as Safari, but services don't always treat it the same (AMC+ refuses it).
-  const BROWSER_LABEL = { chrome: 'Chrome', safari: 'Safari/Orion', firefox: 'Firefox', edge: 'Edge', orion: 'Orion' };
+  const BROWSER_LABEL = { chrome: 'Chrome', safari: 'Safari', firefox: 'Firefox', edge: 'Edge', orion: 'Orion' };
   // 'HD' is Amazon's own word, with no number given; ranked between 720p and 1080p.
   const RANK = { '480p': 1, '540p': 1.5, '576p': 1.5, '720p': 2, HD: 2.5, '1080p': 3, '1440p': 4, '4K': 5 };
   const rankOf = (text) => {
@@ -703,7 +702,7 @@
 
   // The service's own row: its published cap for this browser and its best anywhere (plain facts, no judgement).
   function serviceRow(svc, b, cap) {
-    const where = b === 'safari' ? 'Safari (Orion isn’t covered)' : BROWSER_LABEL[b] || 'this browser';
+    const where = BROWSER_LABEL[b] || 'this browser';
     return [svc.name, cap ? 'up to ' + cap + ' in ' + where : 'limit for ' + (BROWSER_LABEL[b] || 'this browser') + ': unknown', '', svc.best ? 'best anywhere: ' + svc.best : 'best anywhere: unknown'];
   }
 
@@ -1067,7 +1066,7 @@
     const bestHere = topPlay ? tag(topPlay[0].w, topPlay[0].h) : cap === 'HD' ? '720p' : cap || playTag;
     // HDR: a version at this size the browser says it can play, while SDR plays on an HDR screen.
     const hdrHere = ladder ? ladder.variants.filter((v) => v.range && near(v, vw, vh)) : [];
-    const hdrPlayable = hdrHere.filter((v) => canPlayVideo(v.codecs, v.mime) !== false);
+    const hdrPlayable = hdrHere.filter((v) => canPlayVideo(v.codecs, v.mime) === true);
     const missingHdr = !isHdr && /SDR/.test(playingRange) && screenHdr && hdrPlayable.length > 0;
 
     // Sound: what plays, and the best audio of the same language in the video's own list.
@@ -1084,7 +1083,7 @@
     else snd = 'unknown';
     const ss = svc && svc.sound;
     const sCap = ss && b ? ss.caps[b] || '' : '';
-    const sCapText = sCap === 'spatial' ? 'spatial stereo (Premium, eligible titles)' : sCap;
+    const sCapText = sCap === 'spatial' ? 'Netflix spatial audio (2-channel mix; Premium, selected titles)' : sCap;
     const BA = bestA ? (pA && audioShort(pA) === audioShort(bestA) ? audioLong(bestA) : audioShort(bestA)) : '';
     const surroundAny = [pA, bestA].some((a) => a && (a.joc || (a.ch && a.ch.n > 2)));
 
@@ -1119,7 +1118,9 @@
     else if (/ or /.test(playingRange)) colJ = ['note', 'both listed at this size; can’t tell which'];
     else if (missingHdr) colJ = ['unusual', hdrPlayable[0].range + ' listed at this size; ' + B + ' can play it'];
     else if (hdrPlayable.length) colJ = ['normal', hdrPlayable[0].range + ' listed; screen is SDR only'];
-    else if (hdrHere.length) colJ = ['normal', 'listed HDR needs a codec ' + B + ' lacks'];
+    else if (hdrHere.length) colJ = hdrHere.every((v) => canPlayVideo(v.codecs, v.mime) === false)
+      ? ['normal', 'listed HDR needs a codec ' + B + ' lacks']
+      : ['note', 'HDR listed; codec support not reported'];
     else if (ladder && ladder.variants.some((v) => v.range)) colJ = ['normal', 'listed HDR is other sizes'];
     else if (ladder) colJ = ['normal', 'no HDR listed' + (screenHdr ? '' : '; screen is SDR only')];
     else colJ = ['note', 'no stream list to check'];
@@ -1375,7 +1376,8 @@
     rows.sort((a, b) => tier(a.mark) - tier(b.mark) || a.i - b.i);
     const noPc = !pcPic && !pcSnd;
     if (noPc) for (const row of rows) if (row.cmp === 'Computer best: unknown') row.cmp = '';
-    const lead = rows[0].mark === 'gap' || rows[0].mark === 'try' ? rows[0] : null;
+    const isOverviewIssue = (row) => (row.part === 'Picture' && ['hdr', 'lower', 'lower-early'].includes(row.kind)) || (row.part === 'Playback' && ['drop', 'buf', 'uneven'].includes(row.kind));
+    const lead = rows.find(isOverviewIssue) || null;
     let title, sub, pill, dot;
     if (lead && lead.part === 'Picture' && lead.kind === 'hdr') {
       title = 'HDR sent, SDR playing';
@@ -1433,11 +1435,46 @@
     cant.push('Movie Sound (it works after the browser)');
     quiet.push(['Can’t tell:', cant.join('; ')]);
 
+    // The overview is current playback, not a catalogue of service/device possibilities.
+    // Service ceilings and decoder support alone do not prove a change is available for this title.
+    const visibleIssue = lead;
+    let gradeReason = '';
+    if (!grade) {
+      const missing = [];
+      if (!(videoBps > 0)) missing.push('video bitrate');
+      if (!(fps > 0)) missing.push('frame rate');
+      if (!codec) missing.push('video codec');
+      gradeReason = missing.length ? 'Needs ' + missing.join(' and ') + '.'
+        : / or /.test(codec) ? 'Needs the exact video codec.' : 'No data-grade model for ' + codec + '.';
+    }
+    let sound = null;
+    if (snd === 'none') sound = { value: 'No sound track', meaning: '' };
+    else if (pA) {
+      const name = pA.name || '', ch = pA.ch;
+      if (pA.joc) sound = { value: 'Dolby Atmos', meaning: 'Object-based surround in the stream.' };
+      else if (ch && ch.n === 2) sound = { value: 'Stereo', meaning: 'Left and right channels' + (name ? ' · ' + name + ' format' : '') + '.' };
+      else if (ch && ch.n === 1) sound = { value: 'Mono', meaning: 'One audio channel' + (name ? ' · ' + name + ' format' : '') + '.' };
+      else if (ch && ch.n > 2) sound = { value: ch.label + ' surround', meaning: ch.n + ' encoded channels' + (name ? ' · ' + name + ' format' : '') + '.' };
+      else if (name) sound = { value: name + ' audio', meaning: name === 'AAC' ? 'A compressed audio format.' : 'The format of the playing audio track.' };
+    }
+    const overview = {
+      picture: pv,
+      pictureNote: ladder && ['top', 'topsize'].includes(pic) ? 'Highest resolution sent for this video.' : '',
+      grade, gradeReason, size: playTag, sound,
+      issue: visibleIssue ? { title, text: sub, steps: visibleIssue.steps } : null,
+      overlay: ov.effects.length || ov.solid ? ov.effects.concat(ov.parts).join('; ') : '',
+    };
+    // Broader capability statements remain accessible, one disclosure deep.
+    const contextRows = rows.filter((row) => row.part !== 'Playback' && row.cmp && !/unknown/.test(row.cmp)).map((row) => [row.part + ' limits', row.cmp, '', 'Published service capability; not confirmed for this title.']);
+    if (svc && svc.name === 'Netflix') contextRows.push(['Spatial audio', 'Netflix’s 2-channel spatial mix', '', 'Premium, selected titles; not a macOS setting and not confirmed for this playback.']);
+    if (limited) contextRows.push(['Page timing', pbNow, '', 'Page callbacks alone do not establish a video playback problem.']);
+
     return {
-      title,
-      sub,
-      pill,
-      dot,
+      title: visibleIssue ? title : pv,
+      sub: visibleIssue ? sub : '',
+      pill: visibleIssue ? title : pv,
+      dot: visibleIssue ? visibleIssue.mark : 'top',
+      overview,
       kicker: S + ' · ' + B,
       rows,
       quiet,
@@ -1445,6 +1482,7 @@
         { name: 'Picture', rows: pictureRows },
         { name: 'Sound', rows: soundRows },
         { name: 'Playback', rows: playbackRows },
+        { name: 'Service context', rows: contextRows },
       ],
     };
   }
@@ -1454,87 +1492,43 @@
   let host = null, timer = null, panelOpen = false, pillOn = false;
   let lastInput = performance.now(), idleTimer = null;
 
-  // F2 compact scorecard. The button, details and summary are built once so focus and the open state survive each render.
-  const PANEL_CSS =
-    ':host{all:initial;position:fixed;top:12px;right:12px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}' +
-    '.pill{appearance:none;-webkit-appearance:none;box-sizing:border-box;min-width:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#EEE9E0;display:flex;align-items:center;justify-content:flex-end;cursor:pointer;transition:opacity .4s}' +
-    '.pill[hidden]{display:none}' +
-    '.pill:focus{outline:none}.pill:focus-visible{outline:2px solid #9CC3F5;outline-offset:2px}' +
-    '.pv{display:flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 9px;border-radius:15px;background:rgba(26,23,20,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(238,233,224,.18);font:600 12.5px/1 "Avenir Next",system-ui,sans-serif;color:#EEE9E0;box-shadow:0 4px 14px rgba(0,0,0,.35)}' +
-    '.dot{width:9px;height:9px;border-radius:50%;box-sizing:border-box;flex:none}' +
-    '.dot.gap{background:#F0A94B}.dot.try{background:transparent;border:2px solid #F0A94B}.dot.ok{background:#86D39F}.dot.unk{background:transparent;border:1.5px solid #CFC8BC}.dot.top{background:#CFC8BC}' +
-    '.pill,.pill *{pointer-events:auto}' +
-    ':host(.idle) .pill{opacity:0}:host(.idle) .pill,:host(.idle) .pill *{pointer-events:none}' +
-    '.p{box-sizing:border-box;width:404px;max-width:calc(100vw - 24px);max-height:calc(100vh - 80px);overflow:hidden;padding:13px 15px 11px;border-radius:13px;' +
-    'background:rgba(26,23,20,.88);-webkit-backdrop-filter:blur(18px) saturate(1.15);backdrop-filter:blur(18px) saturate(1.15);' +
-    'border:1px solid rgba(238,233,224,.13);box-shadow:0 12px 32px rgba(0,0,0,.42);' +
-    'color:#EEE9E0;font:12.5px/1.42 "Avenir Next",-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}' +
-    '.p,.p *{pointer-events:none}.p summary,.p summary *{pointer-events:auto;cursor:pointer}' +
-    // A short window: while Details is closed, the summary rows give way (clipped) so Details itself stays visible.
-    '.p{display:flex;flex-direction:column}.p[hidden]{display:none}.p .head{flex:0 1 auto;min-height:0;overflow:hidden}.p .more{flex:none}' +
-    '.p:has(details[open]) .head{flex:none;overflow:visible}' +
-    '.p:has(details[open]){pointer-events:auto;overflow:auto}.p:has(details[open]),.p:has(details[open]) *{pointer-events:auto}' +
-    '.kick{font:600 11px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#A39D93;margin-bottom:5px}' +
-    '.t{font:600 18px/1.22 "Avenir Next",system-ui,sans-serif;letter-spacing:-.005em}' +
-    '.sub{color:#D8D2C7;margin-top:3px}' +
-    '.rows{margin-top:8px}' +
-    '.r2{display:grid;grid-template-columns:20px 58px 1fr;column-gap:7px;padding:6px 0;border-top:1px solid rgba(238,233,224,.12);align-items:start}' +
-    '.r2 .k{font:600 12px/1.45 "Avenir Next",system-ui,sans-serif;color:#D8D2C7}' +
-    '.r2 .v{color:#EEE9E0;min-width:0;overflow-wrap:anywhere}' +
-    '.r2 .cmp{display:block;color:#A39D93;font-size:11.5px}' +
-    '.m{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font:700 11px/1 -apple-system,system-ui,sans-serif;flex:none}' +
-    '.m.gap{background:#F0A94B;color:#2a1a06;font-size:9px}' +
-    '.m.try{color:#F0A94B;box-shadow:inset 0 0 0 1.5px #F0A94B;font-size:10px}' +
-    '.m.top{color:#CFC8BC;background:rgba(238,233,224,.08)}' +
-    '.m.ok{background:rgba(134,211,159,.18);color:#86D39F;box-shadow:inset 0 0 0 1.5px rgba(134,211,159,.6)}' +
-    '.m.unk{color:#CFC8BC;box-shadow:inset 0 0 0 1.5px rgba(207,200,188,.6)}' +
-    '.steps{margin:6px 0 2px;padding-left:20px;color:#EEE9E0;font-size:12px}.steps li{margin:2px 0}' +
-    '.steps.s2{font-size:11.5px;color:#D8D2C7;margin-top:4px}' +
-    '.quiet{color:#A39D93;font-size:11.5px;line-height:1.4}.quiet b{color:#C9C2B6;font-weight:600}' +
-    '.q2{margin-top:9px;padding-top:7px;border-top:1px solid rgba(238,233,224,.12)}' +
-    '.more{margin-top:10px;font:600 12px/1 "Avenir Next",system-ui,sans-serif;color:#D8D2C7}' +
-    '.det{margin-top:8px;padding-top:6px;border-top:1px solid rgba(238,233,224,.12)}' +
-    '.legend{color:#A39D93;font-size:11.5px;font-weight:500;margin-bottom:6px}' +
-    '.det .sec{display:flex;align-items:center;gap:8px;margin:9px 0 2px;font:600 12px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#B4AEA4;letter-spacing:.01em}' +
-    '.det .sec::after{content:"";flex:1;height:1px;background:rgba(238,233,224,.12)}' +
-    '.det .row{display:grid;grid-template-columns:68px 1fr 48px;column-gap:10px;padding:2px 0}' +
-    '.det .k{font:500 12px/1.4 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#A39D93}' +
-    '.det .v{min-width:0;overflow-wrap:anywhere}' +
-    '.det .why{color:#A39D93;font-size:11px;line-height:1.33;margin-left:7px}' +
-    '.det .j{font:500 11.5px/1.45 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#7F796F;text-align:right}' +
-    '.det .j.unusual{color:#F0A94B;font-weight:600}.det .j.note{color:#D6CEC1}' +
-    '.f{margin-top:9px;font:500 11px/1 "Avenir Next Condensed","Avenir Next",system-ui,sans-serif;color:#7F796F}';
+  // The disclosure is persistent; its content refreshes without replacing the focused control.
+  const PANEL_CSS = `
+    :host{all:initial;position:fixed;top:12px;right:12px;z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+    .pill{appearance:none;-webkit-appearance:none;box-sizing:border-box;min-width:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#f4f5f7;display:flex;align-items:center;justify-content:flex-end;cursor:pointer;transition:opacity .3s}
+    .pill[hidden]{display:none}.pill:focus{outline:none}.pill:focus-visible,summary:focus-visible{outline:2px solid #9cc3f5;outline-offset:2px}
+    .pv{display:flex;align-items:center;gap:7px;min-height:30px;padding:0 11px;border-radius:15px;background:rgba(23,25,28,.94);border:1px solid #454b54;font:600 12.5px/1.2 "Avenir Next",system-ui,sans-serif;color:#f4f5f7;box-shadow:0 4px 14px #0005}
+    .dot{width:7px;height:7px;border-radius:50%;box-sizing:border-box;flex:none;background:#a6adb8}.dot.gap,.dot.try{background:#efbb73}
+    .pill,.pill *{pointer-events:auto}:host(.idle) .pill{opacity:0}:host(.idle) .pill,:host(.idle) .pill *{pointer-events:none}
+    .p{box-sizing:border-box;width:352px;max-width:calc(100vw - 24px);max-height:calc(100vh - 80px);overflow:auto;padding:16px;border-radius:12px;background:rgba(23,25,28,.97);border:1px solid #454b54;box-shadow:0 12px 32px #0006;color:#f4f5f7;font:13px/1.45 "Avenir Next",-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;scrollbar-width:thin;overscroll-behavior:contain}
+    .p[hidden]{display:none}.p.scrollable{pointer-events:auto}.p,.p *{pointer-events:none}.p summary,.p summary *{pointer-events:auto;cursor:pointer}.p:has(details[open]),.p:has(details[open]) *{pointer-events:auto}
+    .kick{font-size:12px;color:#bfc4cc;margin-bottom:12px}.label{font-size:12px;font-weight:600;color:#bfc4cc}.t{font-size:22px;font-weight:600;line-height:1.25;letter-spacing:-.02em;margin-top:2px}
+    .note,.sub{font-size:12px;color:#bfc4cc;margin-top:4px}.grade-area{margin-top:14px}.grades{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:5px}.grade{min-width:0}.grade+.grade{border-left:1px solid #454b54;padding-left:16px}.grade-value{display:block;font-size:22px;font-weight:600;line-height:1.2;margin:3px 0;overflow-wrap:anywhere}.grade-meaning{display:block;font-size:12px;color:#bfc4cc}.grade-percent{display:block;font-size:12px;margin-top:3px}.grade-caveat{font-size:11.5px;color:#a6adb8;margin-top:8px}.grade-reason{color:#bfc4cc;margin-top:3px}
+    .sound{margin-top:14px;padding-top:12px;border-top:1px solid #454b54}.sound-value{font-weight:600;font-size:15px;margin-top:2px}.sound .note{margin-top:1px}
+    .issue{border-left:2px solid #efbb73;padding-left:10px;margin-top:14px}.issue-title{font-weight:600;color:#efbb73}.issue .note{color:#f4f5f7}.steps{padding-left:17px;font-size:12px;margin:4px 0 0}.steps li{margin:3px 0}
+    .more{border-top:1px solid #454b54;margin-top:14px;padding-top:4px}summary{min-height:36px;display:list-item;align-content:center;font-size:12px;font-weight:600;color:#bfc4cc;list-style-position:inside}summary::marker{color:#a6adb8}
+    .det{padding-top:4px}.sec{font-size:13px;font-weight:600;color:#f4f5f7;margin:14px 0 5px}.row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;padding:4px 0}.k{font-size:12px;color:#bfc4cc}.v{overflow-wrap:anywhere;min-width:0}.why{display:block;color:#a6adb8;font-size:11.5px;margin-top:2px}.j{display:none}.quiet{font-size:11.5px;color:#a6adb8;margin-top:12px}.quiet div+div{margin-top:5px}.quiet b{color:#bfc4cc;font-weight:600}.f{font-size:11px;color:#a6adb8;margin-top:14px}
+    @media(prefers-reduced-motion:reduce){.pill{transition:none}}
+  `;
 
-  const MARK = {
-    gap: ['\u25b2', 'Better on this Mac'],
-    try: ['\u25c7', 'Worth trying'],
-    top: ['\u2013', 'Top sent'],
-    ok: ['\u2713', 'Computer best'],
-    unk: ['?', 'Unknown'],
-  };
-  const LEVEL_WORD = { normal: 'Normal', unusual: 'Unusual', note: 'Note' };
   const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   function headHtml(r) {
-    if (r.wait || !r.rows) return '<div class="t">' + escHtml(r.title) + '</div>' + (r.sub ? '<div class="sub">' + escHtml(r.sub) + '</div>' : '');
-    const one = (row) => {
-      const m = MARK[row.mark];
-      const mark = m ? '<span class="m ' + row.mark + '" title="' + escHtml(m[1]) + '" aria-label="' + escHtml(m[1]) + '">' + m[0] + '</span>' : '<span></span>';
-      const steps = row.steps && row.steps.length ? '<ol class="steps s2">' + row.steps.map((s) => '<li>' + escHtml(s) + '</li>').join('') + '</ol>' : '';
-      return '<div class="r2">' + mark + '<span class="k">' + escHtml(row.part) + '</span><span class="v">' + escHtml(row.now) + (row.note ? '<span class="cmp">' + escHtml(row.note) + '</span>' : '') + (row.cmp ? '<span class="cmp">' + escHtml(row.cmp) + '</span>' : '') + steps + '</span></div>';
-    };
-    const quiet = r.quiet && r.quiet.length ? '<div class="quiet q2">' + r.quiet.map(([k, v]) => '<div><b>' + escHtml(k) + '</b> ' + escHtml(v) + '</div>').join('') + '</div>' : '';
-    return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="t">' + escHtml(r.title) + '</div><div class="sub">' + escHtml(r.sub || '') + '</div><div class="rows">' + r.rows.map(one).join('') + '</div>' + quiet;
+    if (r.wait || !r.overview) return '<div class="t">' + escHtml(r.title) + '</div>' + (r.sub ? '<div class="sub">' + escHtml(r.sub) + '</div>' : '');
+    const o = r.overview;
+    const gradeCell = (name, g, meaning, pct) => '<div class="grade"><div class="label">' + name + '</div>' + (g ? '<span class="grade-value">' + escHtml(g.letter) + '</span><span class="grade-meaning">' + escHtml(meaning) + '</span><span class="grade-percent">' + escHtml(g.pct + pct) + '</span>' : '<div class="note">No reference for ' + escHtml(o.size) + '.</div>') + '</div>';
+    const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, 'Against Blu-ray', ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
+    const sound = o.sound ? '<div class="sound"><div class="label">Sound</div><div class="sound-value">' + escHtml(o.sound.value) + '</div>' + (o.sound.meaning ? '<div class="note">' + escHtml(o.sound.meaning) + '</div>' : '') + '</div>' : '';
+    const issue = o.issue ? '<div class="issue"><div class="issue-title">' + escHtml(o.issue.title) + '</div><div class="note">' + escHtml(o.issue.text) + '</div>' + (o.issue.steps && o.issue.steps.length ? '<ul class="steps">' + o.issue.steps.map(x => '<li>' + escHtml(x) + '</li>').join('') + '</ul>' : '') + '</div>' : '';
+    const overlay = o.overlay ? '<div class="issue"><div class="issue-title">Picture altered by the page</div><div class="note">' + escHtml(o.overlay) + '</div></div>' : '';
+    return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="label">Picture</div><div class="t">' + escHtml(o.picture) + '</div>' + (o.pictureNote ? '<div class="note">' + escHtml(o.pictureNote) + '</div>' : '') + '<div class="grade-area"><div class="label">Data grades</div>' + gradesHtml + '</div>' + sound + issue + overlay;
   }
 
   function detHtml(r) {
-    const b = browserName();
-    const B = b === 'safari' ? 'Safari' : BROWSER_LABEL[b] || 'this browser';
-    const row = ([k, v, lv, why]) =>
-      '<div class="row"><div class="k">' + escHtml(k) + '</div><div class="v">' + escHtml(v) +
-      (why ? '<span class="why">' + escHtml(why) + '</span>' : '') + '</div><div class="j ' + (lv || '') + '">' + (LEVEL_WORD[lv] || '') + '</div></div>';
-    const sections = (r.sections || []).filter((s) => s.rows && s.rows.length).map((s) => '<div class="sec">' + escHtml(s.name) + '</div>' + s.rows.map(row).join('')).join('');
-    return '<div class="legend">\u25b2 better on this Mac \u00b7 \u25c7 worth trying \u00b7 \u2013 top sent to ' + escHtml(B) + ' \u00b7 \u2713 computer best \u00b7 ? unknown</div>' + sections + '<div class="f">Control+Shift+H also opens and closes this panel.</div>';
+    const row = ([k, v, lv, why]) => '<div class="row"><div class="k">' + escHtml(k) + '</div><div class="v">' + escHtml(v) + (why ? '<span class="why">' + escHtml(why) + '</span>' : '') + '</div></div>';
+    const sections = (r.sections || []).map(s => ({ ...s, rows: (s.rows || []).filter(x => x[1] && !['not reported', 'measuring…', '—'].includes(x[1])) })).filter(s => s.rows.length).map(s => '<div class="sec">' + escHtml(s.name) + '</div>' + s.rows.map(row).join('')).join('');
+    const context = r.quiet && r.quiet.length ? '<div class="quiet">' + r.quiet.map(([k,v]) => '<div><b>' + escHtml(k) + '</b> ' + escHtml(v) + '</div>').join('') + '</div>' : '';
+    return sections + context + '<div class="f">Control+Shift+H opens and closes this panel.</div>';
   }
 
   function build() {
@@ -1544,13 +1538,11 @@
     root.innerHTML =
       '<style>' + PANEL_CSS + '</style>' +
       '<button class="pill" type="button" aria-expanded="false" aria-controls="p"><span class="pv"><span class="dot"></span><span class="pt"></span></span></button>' +
-      '<div class="p" id="p" hidden><div class="head"></div><details class="more"><summary>Details</summary><div class="det"></div></details></div>';
-    // A mouse click leaves the pill unfocused (Chrome focuses buttons on click), so it can still fade and Space
-    // still reaches the player; Enter or Space on a focused pill keeps the focus there.
+      '<div class="p" id="p" hidden><div class="head"></div><details class="more"><summary>Technical details</summary><div class="det"></div></details></div>';
+    // The disclosure itself is never rebuilt; focus remains on the same summary.
     root.querySelector('details').addEventListener('toggle', () => {
-      heldPx = 0;
-      lineHeights.clear();
-      root.querySelector('.p').style.minHeight = '';
+      const p = root.querySelector('.p');
+      p.classList.toggle('scrollable', p.scrollHeight > p.clientHeight);
     });
     root.querySelector('.pill').addEventListener('click', (e) => {
       setPanel(!panelOpen);
@@ -1566,8 +1558,6 @@
 
   function leaveHost() {
     if (host && host.isConnected) host.remove();
-    keptFor = null;
-    heldPx = 0;
     clearInterval(timer);
     timer = null;
     clearTimeout(idleTimer);
@@ -1630,58 +1620,16 @@
     pill.setAttribute('aria-expanded', panelOpen ? 'true' : 'false');
     pill.setAttribute('aria-label', 'Stream quality: ' + text + (panelOpen ? '. Hide panel' : '. Show panel'));
     root.querySelector('.p').hidden = !panelOpen;
-    keepLines(r);
+    const panel = root.querySelector('.p');
+    const scroll = panel.scrollTop;
     root.querySelector('.head').innerHTML = headHtml(r);
     root.querySelector('.det').innerHTML = detHtml(r);
-    holdHeight(root.querySelector('.p'));
+    panel.scrollTop = scroll;
+    panel.classList.toggle('scrollable', panel.scrollHeight > panel.clientHeight);
     updateIdle();
   }
 
-  // Lines that come and go (a measured rate, an overlay that fades with the controls) would make every line below
-  // jump, so while the panel shows one video a line once shown keeps its place, reading "—" when it has nothing now,
-  // and the panel never shrinks by itself. A new video, closing the panel or opening/closing Details starts afresh.
-  let keptFor = null, kept = { quiet: [], sections: {} }, heldPx = 0, lineHeights = new Map();
-  function keepLines(r) {
-    const v = r.wait ? null : mainVideo();
-    if (!panelOpen || v !== keptFor) (keptFor = v), (kept = { quiet: [], sections: {} }), (heldPx = 0), lineHeights.clear();
-    if (r.wait) return;
-    const merge = (order, rows, keyOf, blank) => {
-      for (const row of rows) if (!order.includes(keyOf(row))) order.splice(order.length, 0, keyOf(row));
-      return order.map((k) => rows.find((row) => keyOf(row) === k) || blank(k));
-    };
-    if (r.quiet) r.quiet = merge(kept.quiet, r.quiet, (q) => q[0], (k) => [k, '—']);
-    for (const sec of r.sections || []) {
-      const order = kept.sections[sec.name] || (kept.sections[sec.name] = []);
-      // Insert new keys after the key they follow now, so a late row lands where it belongs.
-      sec.rows.forEach((row, i) => {
-        if (order.includes(row[0])) return;
-        const prev = i ? order.indexOf(sec.rows[i - 1][0]) : -1;
-        order.splice(prev + 1, 0, row[0]);
-      });
-      sec.rows = order.map((k) => sec.rows.find((row) => row[0] === k) || [k, '—', '', 'nothing to show right now']);
-    }
-  }
-  function holdHeight(p) {
-    // A fresh start (heldPx 0) measures without the old minimum.
-    if (!panelOpen || !heldPx) p.style.minHeight = '';
-    if (!panelOpen) return;
-    const seenKeys = new Map();
-    // Each line keeps the tallest it has been, so a line that wraps to two and back doesn't move the ones below.
-    for (const el of p.querySelectorAll('.r2, .r2 .cmp, .quiet > div, .det .row')) {
-      const own = el.classList.contains('cmp') ? el.closest('.r2') : el;
-      let key = el.className + ':' + ((own.querySelector('.k, b') || {}).textContent || '');
-      seenKeys.set(key, (seenKeys.get(key) || 0) + 1);
-      key += '#' + seenKeys.get(key); // Picture and Sound both have Playing and Top sent
-      const h = Math.max(lineHeights.get(key) || 0, el.getBoundingClientRect().height);
-      lineHeights.set(key, h);
-      el.style.minHeight = h + 'px';
-      el.style.boxSizing = 'border-box';
-    }
-    heldPx = Math.min(Math.max(heldPx, p.offsetHeight), window.innerHeight - 80);
-    const cs = getComputedStyle(p);
-    const extra = cs.boxSizing === 'border-box' ? 0 : ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((t, k) => t + (parseFloat(cs[k]) || 0), 0);
-    p.style.minHeight = Math.max(0, heldPx - extra) + 'px';
-  }
+  // No absent diagnostic is retained as a blank placeholder. Normal flow keeps all facts reachable.
 
   // In full screen only the full-screen element is drawn, so the pill and panel move inside it together.
   // (When a site puts the bare <video> itself in full screen, nothing can be drawn over it.)
