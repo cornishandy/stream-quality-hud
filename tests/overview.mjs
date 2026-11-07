@@ -2,9 +2,10 @@
 // hook-only rewrites follow run.mjs timingChecks and never ship in the extension.
 import {chromium, webkit} from 'playwright-core';
 import fs from 'node:fs';
+import os from 'node:os';
 import assert from 'node:assert/strict';
 const source=fs.readFileSync(new URL('../extension/hud.js',import.meta.url),'utf8');
-const out=process.env.HUD_SHOTS || '/Users/andrewphillips/Library/Caches/hud-design';
+const out=process.env.HUD_SHOTS || `${os.homedir()}/Library/Caches/hud-design`;
 let count=0;
 const check=(label,yes)=>{assert.ok(yes,label);count++;console.log('PASS '+label)};
 for(const [name,engine] of [['Chromium',chromium],['WebKit',webkit]]){
