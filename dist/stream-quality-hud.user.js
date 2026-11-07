@@ -821,8 +821,8 @@
     const size = TYPICAL[t] ? t : 'sd';
     const fam = !codec || / or /.test(codec) ? -1 : /H\.264/.test(codec) ? 0 : 1;
     const [lo, hi] = fam < 0 ? [TYPICAL[size][1][0], TYPICAL[size][0][1]] : TYPICAL[size][fam];
-    const what = (size === 'sd' ? 'this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
-    const range = 'typical ' + what + ': ' + lo + '–' + hi + (size === 'sd' ? ' Mbps' : '');
+    const what = (size === 'sd' ? 'for this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
+    const range = 'typical ' + what + ': ' + lo + '–' + hi + ' Mbps';
     if (bps / 1e6 >= lo) return ['normal', range];
     if (measured) return ['note', 'lean; ' + range + '; varies by scene'];
     return [bps / 1e6 < lo / 2 ? 'unusual' : 'note', 'lean; ' + range];
