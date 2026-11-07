@@ -593,7 +593,7 @@
   function sourceKind(video) {
     const src = video.currentSrc || '';
     if (/^blob:/.test(src)) return 'adaptive stream (Media Source)';
-    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (WebKit’s own player)';
+    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (browser’s own player)';
     if (/^https?:/.test(src)) return 'single file';
     return src ? src.split(':')[0] : 'none';
   }
@@ -813,7 +813,7 @@
     const fam = !codec || / or /.test(codec) ? -1 : /H\.264/.test(codec) ? 0 : 1;
     const [lo, hi] = fam < 0 ? [TYPICAL[size][1][0], TYPICAL[size][0][1]] : TYPICAL[size][fam];
     const what = (size === 'sd' ? 'this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
-    const range = 'typical ' + what + ': ' + lo + '–' + hi;
+    const range = 'typical ' + what + ': ' + lo + '–' + hi + (size === 'sd' ? ' Mbps' : '');
     if (bps / 1e6 >= lo) return ['normal', range];
     if (measured) return ['note', 'lean; ' + range + '; varies by scene'];
     return [bps / 1e6 < lo / 2 ? 'unusual' : 'note', 'lean; ' + range];
@@ -826,7 +826,7 @@
   // 30 Mbps at 24 fps) scores about 0.6. A per-title encoder gives cartoons fewer bits on purpose.
   // Disc bands as shares of the Blu-ray reference (adjusted 0.30, 0.15, 0.09 and 0.055 bits per pixel over 0.6).
   const DISC_BPP = 0.6;
-  const GRADES = [[0.3, 'A'], [0.15, 'B'], [0.09, 'C'], [0.055, 'D'], [0, 'F']].map(([x, l]) => [x / DISC_BPP, l]);
+  const GRADES = [[0.3, 'A', 'disc-like'], [0.15, 'B', 'generous'], [0.09, 'C', 'typical streaming'], [0.055, 'D', 'lean'], [0, 'F', 'starved']].map(([x, l, word]) => [x / DISC_BPP, l, word]);
   // The streaming grade compares the same figure with a high mainstream streaming reference at the playing size, in
   // the same units (H.264-equivalent Mbps at 24 fps → adjusted bits per pixel). From GPT-6.1-Sol's sourced research
   // (21 Oct 2026): 4K 46.4 (Apple TV+, 29 Mbps HEVC, measured report), 1080p 11.2 (Max, 6.99 Mbps HEVC, measured
@@ -1155,7 +1155,7 @@
       else pictureRows.push(['Streaming grade', 'reference unavailable', '', 'no high streaming reference for ' + playTag]);
       pictureRows.push([
         'Disc grade',
-        dg.letter + ' · ' + dg.pct + ' of the Blu-ray reference',
+        dg.letter + ' · ' + dg.word + ' · ' + dg.pct + ' of the Blu-ray reference',
         /F$/.test(dg.letter) && !/ /.test(dg.letter) ? 'unusual' : /[DF]$/.test(dg.letter) ? 'note' : 'normal',
         (/ /.test(dg.letter) ? 'up to ' : '') + grade.bpp.toFixed(3) + ' bits per pixel; compared with 1080p H.264 at 30 Mbps and 24 fps; codec-adjusted' + how + '. A rough data guide.',
       ]);
@@ -1201,7 +1201,7 @@
     } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'format and channels not reported']);
     if (ss) soundRows.push([S, sCap ? sCapText + ' in ' + B : 'limit for ' + B + ': unknown', '', ss.best ? 'best anywhere: ' + ss.best : 'best sound anywhere: unknown']);
     if (bestA && snd !== 'best') soundRows.push(['Top sent', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest && snd === 'lower' ? B + ' says it can decode it; the player didn’t pick it' : canBest ? B + ' says it can decode it' : '']);
-    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'after the browser; both on = processed twice']);
+    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound or a Chrome audio extension, if on', '', 'after the browser; using both processes sound twice']);
     else soundRows.push(['After this', 'Movie Sound, if on', '', 'after the browser' + (surroundAny ? ', on stereo (surround folded)' : '') + '; not seen here']);
 
     // ---- Playback
@@ -1508,7 +1508,7 @@
     if (r.wait || !r.overview) return '<div class="t">' + escHtml(r.title) + '</div>' + (r.sub ? '<div class="sub">' + escHtml(r.sub) + '</div>' : '');
     const o = r.overview;
     const gradeCell = (name, g, meaning, pct) => '<div class="grade"><div class="label">' + name + '</div>' + (g ? '<span class="grade-value">' + escHtml(g.letter) + '</span><span class="grade-meaning">' + escHtml(meaning) + '</span><span class="grade-percent">' + escHtml(g.pct + pct) + '</span>' : '<div class="note">No reference for ' + escHtml(o.size) + '.</div>') + '</div>';
-    const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, 'Against Blu-ray', ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
+    const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, o.grade.disc.word, ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
     const sound = o.sound ? '<div class="sound"><div class="label">Sound</div><div class="sound-value">' + escHtml(o.sound.value) + '</div>' + (o.sound.meaning ? '<div class="note">' + escHtml(o.sound.meaning) + '</div>' : '') + '</div>' : '';
     const issue = o.issue ? '<div class="issue"><div class="issue-title">' + escHtml(o.issue.title) + '</div><div class="note">' + escHtml(o.issue.text) + '</div>' + (o.issue.steps && o.issue.steps.length ? '<ul class="steps">' + o.issue.steps.map(x => '<li>' + escHtml(x) + '</li>').join('') + '</ul>' : '') + '</div>' : '';
     const overlay = o.overlay ? '<div class="issue"><div class="issue-title">Picture altered by the page</div><div class="note">' + escHtml(o.overlay) + '</div></div>' : '';

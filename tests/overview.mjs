@@ -38,7 +38,7 @@ for(const [name,engine] of [['Chromium',chromium],['WebKit',webkit]]){
   await page.evaluate(()=>{window.__vc={};window.__hud.render()});t=await head();
   check(name+' grade reason names missing codec and frame rate',/video bitrate and frame rate and video codec/.test(t));
   await page.evaluate(()=>{window.__width=1920;window.__height=1080;window.__vc={codec:'avc1.640028',bitrate:6000000,framerate:24,colorSpace:{transfer:'bt709'}};window.__ac={codec:'mp4a.40.2',numberOfChannels:2};window.__hud.render()});t=await head();
-  check(name+' both grades and comparisons are directly visible',/Streaming\s+C\s+moderate data\s+about 50%/.test(t)&&/Disc\s+C\s+Against Blu-ray\s+about 20%/.test(t)&&/Data grades, not a visual test/.test(t));
+  check(name+' both grades and comparisons are directly visible',/Streaming\s+C\s+moderate data\s+about 50%/.test(t)&&/Disc\s+C\s+typical streaming\s+about 20%/.test(t)&&/Data grades, not a visual test/.test(t));
   await page.locator('[data-stream-quality-hud]').screenshot({path:out+'/'+name.toLowerCase()+'-graded-main.png'});await exportState('graded');
   await page.evaluate(()=>{window.__width=2560;window.__height=1440;window.__hud.render()});t=await head();
   check(name+' absent streaming reference preserves disc comparison',/No reference for 1440p/.test(t)&&/Disc\s+[ABCDF]/.test(t));

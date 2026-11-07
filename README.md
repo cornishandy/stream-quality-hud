@@ -32,8 +32,8 @@ Most streaming players never say which version they picked. Chrome often gets a 
 - It only reads what the page already has: the `<video>` element, the browser's own playback stats, the stream lists (DASH `.mpd`, HLS `.m3u8`) the page downloaded, and which formats the browser says it can decode.
 - **No host permissions, and nothing sent anywhere.** To read a stream list, it asks the browser again for a list the page itself already downloaded, from inside the page with the page's own rights. The browser usually answers that from its cache. It never contacts any other address and never fetches in the background.
 - **It never touches sound.** It doesn't create an audio context and doesn't hook the audio path.
-- **A verdict needs exact evidence:** the list the video itself is playing (its HLS source, or the list matching its own newest downloads since it started). Without that, it says it can't confirm, rather than guessing.
-- **Per-service limits** (for example, Netflix sends Chrome up to 1080p and Safari up to 4K) come from each service's own help pages. Sources and quotes are in [docs/SERVICES.md](docs/SERVICES.md) and [docs/SOUND.md](docs/SOUND.md).
+- **Higher-version advice needs playback evidence:** a higher version in the list matched to this video (its HLS source, or the list matching its own newest downloads since it started), plus browser decoder and screen support where relevant. Service-wide limits alone do not establish an available upgrade.
+- **Service capability notes (including unknown limits)** (for example, Netflix sends Chrome up to 1080p and Safari up to 4K) come from each service's own help pages. Sources and quotes are in [docs/SERVICES.md](docs/SERVICES.md) and [docs/SOUND.md](docs/SOUND.md).
 
 ## Develop
 
@@ -51,7 +51,7 @@ Most streaming players never say which version they picked. Chrome often gets a 
 - [x] Chrome extension (Manifest V3), 1.9.0
 - [x] Safari userscript, built from the same file
 - [x] Current picture, data grades, plain-language sound and technical details
-- [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
+- [x] Service capability notes, including unknown limits, for Netflix, Prime Video, Disney+, Hulu, HBO Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
 - [x] 150/150 checks
 - [ ] Chrome Web Store listing (not planned)
 

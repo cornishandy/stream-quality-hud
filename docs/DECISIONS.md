@@ -3,7 +3,7 @@
 ## 1.9.0: playback first
 22 Oct 2026, Andy requested drastic consolidation, visible grades, plain sound explanations, new references, and Astra/Gemini judgment. Both independently chose the compact inspector over grade-first hero letters.
 
-- **Hierarchy:** observed Picture → Data grades → observed Sound → supported issue → Technical details. No global “Nothing to change” conclusion from incomplete evidence. Service ceilings do not prove current-title eligibility, selectable sound, or an available upgrade.
+- **Hierarchy:** observed Picture → Data grades → observed Sound → supported issue → Technical details. Higher-version advice needs a higher version in the current video’s matched stream list, with browser decoder and screen support where relevant. Service ceilings do not prove current-title eligibility, selectable sound, or an available upgrade.
 - **Grades stay findable:** show both letters with complete ranges/up-to bounds, meanings and percentages. Without inputs, name the actual blocker once. Missing/ambiguous/unsupported codec and absent size references are distinct; a valid Disc grade survives a missing Streaming reference. Math is unchanged from 1.8.0.
 - **Sound describes the stream:** stereo means two channels, left and right; AAC is its format. AAC alone is not stereo. Spatial audio is Netflix's title-dependent 2-channel mix, not a macOS switch. Service/device possibilities remain in Technical details.
 - **Evidence determines emphasis:** only current video's matched ladder or observed problems enter the overview. A Chrome→Safari service-wide ceiling, low grade, or 60 Hz page callbacks alone do not justify an upgrade instruction. Decoder support alone never proves a selectable audio track.
