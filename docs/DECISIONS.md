@@ -1,5 +1,46 @@
 # Design decisions
 
+## 1.13.0: measure the video that is actually playing
+25 Oct 2026. Andy asked for a physical reading of the video on screen, not a calculation from a standards table: peak, range, box and bar figures, and the running average in the pill. Estimated listed bitrates stay useful. Actual encoded video is better when the pieces can be read exactly.
+
+> also, I kind of want an actual analysis of the video I'm watching, not logical calculations and not based on standards, but actual "physical" analysis of the video I'm watching, and then give me peak, range, and then all the box and bar type analytics, and display running avg. in pill title. estimated values are useful, but if we can get actual values it would be MUCH BETTER!
+
+GPT-6-Astra's pre-OK and GPT-6.1-Sol's challenge were both NO-GO on the first plan. Plan r2 folded those findings in. Astra's 9:20 PM recheck (Addendum A) overrides r2 where they differ. Each finding below is met in the build.
+
+- **Presentation time, not decode time** (Sol). A decode-time peak on the reference file was 0.637% off the movie's presentation-time peak. The reader keeps integer ticks, reads `trex` defaults, signed composition offsets and the simple edit list, and the tests compare one-second presentation bins with ffprobe.
+- **An append is not the same as accepted samples** (Sol). Sequence mode is unavailable. Samples outside the append window, and samples before the next keyframe after an abort or a trim, are dropped. Astra's recheck: a fragment is emitted only after `updateend` with no error, and only once each sample's own bytes have arrived. An empty `mdat` before the real one releases nothing. A sample is kept only when its whole interval sits inside the append window.
+- **Watched time is not the latest fragment in a second** (Sol). Removing buffered media while paused does not rewrite seconds already watched. The ledger is a merged union of watched intervals. Overlapping samples contribute only the unseen part. Four quarter-second commits in one second match one whole-second commit.
+- **A hidden player is not the one on screen** (Sol). The reader answers only for the element that was asked. A worker-owned handle stays unavailable. There is no "most recent MediaSource" guess, so a hidden decoy cannot supply the numbers.
+- **Do not invent a second request** (Sol, and Astra). Chrome and Orion install the reader as a page-world content script, which does not send a CSP report. There is no blob fallback. Safari's inline script is limited to the service list Andy chose at about 9:05 PM ("Checked services"), knowing a site that tightens its rules could receive a report. Safari may send a site a CSP violation report the first time, if that site has started blocking inline scripts; the HUD then never tries there again. A policy that allows inline scripts, including a report-only policy that allows them, sends none. If a report-only policy blocks the script but the reader still ran, this page is measured.
+- **Replay must not double count** (Sol). Each session keeps the highest sequence number. A second ping does not add the same pieces again. A gap after the first accepted record stops measurement rather than leaving a hole.
+- **Caps stop the measurement** (Astra's recheck, over the earlier "drop the oldest and show a gap"). Sample count and fragment size are checked before the work. The watched ledger stops at 6 hours, pinned inits at 16 sources, the transport queue at 600 records or 3 MB, and the pending samples at 200,000. At any cap the panel says `Measurement stopped at its safety limit.` It does not show an approximation. Parse, accounting and render times are reported as p95. The Safari block list is the userscript's GM storage, not the page's localStorage.
+- **Several video tracks** (Astra). More than one video track on the owned MediaSource is unavailable. A representation switch replaces that SourceBuffer's init, so a normal quality change is not treated as two tracks. Two tracks in one init, or two buffers each with a video track, stays unavailable.
+- **Frame size at commit** (Astra). The size is the playing element's `videoWidth` by `videoHeight` when the second is committed, not the init box. That covers in-band size changes. Edit lists other than none, or one non-empty edit at rate 1, are unavailable.
+
+Grades use the measured average only after 120 seconds of the current size and codec, with at least 90% of that configuration's own watched interval committed. Until then the listed bitrate grade stays. The pill keeps today's listed rate until 5 seconds are committed and coverage is at least 90%, then it shows the average. Unavailable cases name the reason and show no bitrate. A ready measurement with no complete second shows the average and says the highest second and range need a full measured second.
+
+## 1.12.0: the pill keeps the size, and drops the words that never change
+25 Oct 2026. Andy said every film was reading SDR, and BlackHole (the virtual audio device he uses) forces 2-channel stereo, so those pill words told him nothing. The size stays.
+
+- **The pill reads size, video codec and listed bitrate**, such as `720p · H.264 · 3.0 Mbps`. A range stays a range. An HLS figure that includes sound says so. A codec is left off when the list names more than one.
+- **SDR and channel layout stay in the open panel.** HDR is added on the pill only when this picture is actually HDR. The amber dot still marks a problem.
+
+## 1.11.0: the corner pill names the picture and the sound
+25 Oct 2026. Andy asked the top-right pill to stop listing problems, and to show key video and audio info. He picked picture and sound (`720p SDR · Stereo`). GPT-6-Astra preferred size and colour only. Gemini 4 Argon preferred picture and sound when the pill should carry audio. Both kept the amber dot as the pill’s only problem mark.
+
+- **The pill uses the panel’s own words.** Size and colour stay as they already read (`720p SDR`, `1080p HDR10`). The sound word is the same one in the Sound block (`Stereo`, `Mono`, `5.1 surround`, `Dolby Atmos`, `No sound track`). When the browser does not report a track, the pill leaves sound off. It does not guess stereo.
+- **Problems stay in the open panel.** Titles such as “Picture below 1080p” and “Dropping frames” are not the pill text. The dot still turns amber for those problems.
+- **A newer film card on this Mac is kept.** The loopback box can fill in another browser’s card, but an older copy from the box does not replace a newer one already stored here.
+
+## 1.10.0: compare browsers that actually played this film
+25 Oct 2026. Andy asked for the cross-browser checker to be built into the extension, after Chrome and Safari were sent different Hulu ladders for the same film.
+
+- **A card is saved only when this video’s own list is confirmed.** It records the best playable offer on that list (size, codec, listed bitrate, whether the figure includes sound, HDR, frame timing, and whether the page filters the picture). It does not record the low rung a player starts on, a playlist URL, a segment URL, or a cookie.
+- **A recommendation needs a second observed card for the same film path.** The film id is the host plus the path, with the query stripped. One browser, or a published service cap, produces no “Watch in” line. Cards older than 7 days are dropped.
+- **Order:** higher resolution, then HDR when this screen can show it, then codec-adjusted bits outside a 15% band, then even frame timing, then a picture the page does not filter. Surround does not break a tie. On a Mac the browser folds it, and the panel cannot see the speakers.
+- **The line is one sentence.** The current browser wins with no switch link. Chrome, Edge and Firefox get an open link (`google-chrome://`, `microsoft-edge:`, `firefox://open-url`). Safari has no open-url scheme, so the row names Safari and the page address.
+- **Where the cards meet:** this browser’s localStorage, and a loopback box at `127.0.0.1:9791` when `node tools/card-box.mjs` is running. Chrome’s service worker is the only thing allowed to contact that address. Safari’s userscript uses `GM_xmlhttpRequest` with `@connect 127.0.0.1`. If the box is down, the panel keeps this browser’s card and does not invent the other browser’s.
+
 ## 1.9.0: playback first
 22 Oct 2026, Andy requested drastic consolidation, visible grades, plain sound explanations, new references, and Astra/Gemini judgment. Both independently chose the compact inspector over grade-first hero letters.
 

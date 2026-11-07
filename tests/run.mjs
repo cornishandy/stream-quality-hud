@@ -5,6 +5,7 @@
 // Needs playwright-core: `npm install`, or set PLAYWRIGHT_FROM to a folder whose node_modules already has it.
 // Chromium loads the real unpacked extension; WebKit runs hud.js as an init script with a stub chrome API.
 import { createRequire } from 'node:module';
+import { measureChecks } from './measure.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,6 +72,36 @@ const crossOrigin = [
   ['DASH list the page itself can\u2019t read stays unread', 'mse.html?rep=1&xo=8795', [/Needs .*video (bitrate|codec)/]],
   ['HLS list the page itself can\u2019t read stays unread', 'hls.html?xo=8795', [/Needs .*video (bitrate|codec)/]],
 ];
+
+const PROBLEM_PILL = /Picture not at top yet|Picture below|Dropping frames|Uneven frame timing|Buffer running low|HDR sent, SDR playing|Safari page at/;
+
+async function pillFace(page) {
+  return page.evaluate(() => {
+    const h = document.querySelector('[data-stream-quality-hud]');
+    if (!h || !h.shadowRoot) return null;
+    const root = h.shadowRoot;
+    const pill = root.querySelector('.pill');
+    return {
+      text: root.querySelector('.pt') ? root.querySelector('.pt').textContent : '',
+      label: pill ? pill.getAttribute('aria-label') || '' : '',
+      dot: root.querySelector('.dot') ? root.querySelector('.dot').className : '',
+      issue: root.querySelector('.issue-title') ? root.querySelector('.issue-title').textContent : '',
+    };
+  });
+}
+
+// The corner button names size, video codec and listed bitrate. SDR and stereo stay off it.
+async function pillChecks(label, page) {
+  await open(page, 'mse.html?rep=1&audio=1&pill=low');
+  let face = await pillFace(page);
+  const named = face && face.text === '720p · H.264 · 3.0 Mbps' && !/\bSDR\b|\bStereo\b/.test(face.text) && !PROBLEM_PILL.test(face.text) && PROBLEM_PILL.test(face.issue) && face.text !== face.issue && /(?:^| )(?:gap|try)(?: |$)/.test(face.dot) && face.label.startsWith('Stream quality: ' + face.text);
+  check(`${label}: pill names 720p, codec and bitrate while the panel keeps the problem`, !!named, JSON.stringify(face));
+
+  await open(page, 'mse.html?rep=2&pill=nosound');
+  face = await pillFace(page);
+  const quiet = face && face.text === '1080p · H.264 · 6.0 Mbps' && !/\bSDR\b|\bStereo\b|AAC|5\.1|Atmos/.test(face.text) && !PROBLEM_PILL.test(face.text);
+  check(`${label}: pill keeps 1080p and leaves off colour and channel words`, !!quiet, JSON.stringify(face));
+}
 
 async function runCases(label, page, list, errors) {
   for (const [name, url, pats] of list) {
@@ -371,6 +402,69 @@ async function timingChecks(engine, label) {
   await browser.close();
 }
 
+function filmCard(browser, top, extra = {}) {
+  return {
+    v: 1,
+    id: '127.0.0.1/mse.html',
+    page: 'http://127.0.0.1:8794/mse.html',
+    browser,
+    at: Date.now(),
+    screenHdr: false,
+    top,
+    timing: 'unknown',
+    altered: false,
+    ...extra,
+  };
+}
+const TOP_720 = { w: 1280, h: 720, tag: '720p', codec: 'H.264', bps: 2500000, includesSound: true, hdr: false, fps: 24 };
+const TOP_4K = { w: 3840, h: 2160, tag: '4K', codec: 'H.264', bps: 16000000, includesSound: false, hdr: false, fps: 24 };
+
+// Seeded cards only. The live box is not required: an empty store must not invent a recommendation.
+async function filmCardChecks(label, page) {
+  const self = label === 'Chromium' ? 'chrome' : 'safari';
+  const other = self === 'chrome' ? 'safari' : 'chrome';
+  const otherName = other === 'safari' ? 'Safari' : 'Chrome';
+  const selfName = self === 'chrome' ? 'Chrome' : 'Safari';
+  const apos = '\u2019';
+  await page.goto(BASE + 'plain.html');
+  await page.waitForTimeout(300);
+  let n = 0;
+  const run = async (cards) => {
+    await page.evaluate((json) => localStorage.setItem('sqhud.cards.v1', json), JSON.stringify(cards));
+    return (await open(page, 'mse.html?rep=2&card=' + (++n))) || '(no HUD)';
+  };
+  let text = await run([]);
+  check(`${label}: no other browser card means no watch line`, !/Watch in/.test(text), text.slice(0, 500));
+  text = await run([filmCard(other, TOP_720)]);
+  check(
+    `${label}: a smaller saved card leaves this browser as the one to watch`,
+    new RegExp('Watch in\\s+This browser has 1080p, against ' + otherName + apos + 's 720p\\.').test(text) && !/Open in /.test(text),
+    text
+  );
+  const stored = await page.evaluate(() => localStorage.getItem('sqhud.cards.v1') || '');
+  check(`${label}: saved card keeps the film path and drops playlist urls`, stored.includes('127.0.0.1/mse.html') && stored.includes('"' + self + '"') && !/m3u8|\.mpd|cookie/i.test(stored), stored.slice(0, 600));
+  text = await run([filmCard(other, TOP_4K)]);
+  check(`${label}: a larger saved card names that browser`, new RegExp('Watch in\\s+' + otherName + ' has 4K, against ' + selfName + apos + 's 1080p\\.').test(text), text);
+  const link = await page.evaluate(() => {
+    const root = document.querySelector('[data-stream-quality-hud]').shadowRoot;
+    const box = root.querySelector('.watch');
+    const a = box && box.querySelector('a');
+    const details = root.querySelector('details');
+    if (details) details.open = false;
+    const target = a || box;
+    return { href: a ? a.getAttribute('href') : '', text: box ? box.innerText : '', pe: target ? getComputedStyle(target).pointerEvents : '' };
+  });
+  if (other === 'chrome') {
+    check(`${label}: Chrome watch link uses the google-chrome scheme and stays clickable`, link.href === 'google-chrome://http://127.0.0.1:8794/mse.html' && link.pe === 'auto', JSON.stringify(link));
+  } else {
+    check(`${label}: Safari has no open-url scheme, so the row names the page`, /Open this page in Safari: http:\/\/127\.0\.0\.1:8794\/mse\.html/.test(link.text) && !link.href && link.pe === 'auto', JSON.stringify(link));
+  }
+  text = await run([filmCard(self, TOP_4K)]);
+  check(`${label}: a card from this same browser is not a second opinion`, !/Watch in/.test(text), text.slice(0, 500));
+  text = await run([filmCard(other, TOP_4K, { at: Date.now() - 8 * 24 * 60 * 60 * 1000 })]);
+  check(`${label}: a card older than 7 days is ignored`, !/Watch in/.test(text), text.slice(0, 400));
+}
+
 // ---- Chromium with the real extension ----
 if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqhud-chromium-'));
@@ -387,6 +481,7 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   await steadyLayout('Chromium', page);
   await shortWindow('Chromium', page);
   await soundCases('Chromium', page, errors);
+  await pillChecks('Chromium', page);
   {
     const sdr = !(await page.evaluate(() => matchMedia('(dynamic-range: high)').matches));
     const text = (await open(page, 'hlsplay.html?m=hdr')) || '(no HUD)';
@@ -419,7 +514,8 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
 
   // no privileged fetching: the extension asks for no site access beyond its content script
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
-  check('Manifest: no host_permissions or permissions', !manifest.host_permissions && !manifest.permissions, JSON.stringify({ host: manifest.host_permissions, perms: manifest.permissions }));
+  const hosts = manifest.host_permissions || [];
+  check('Manifest: host permission is only the localhost card box', hosts.length === 1 && hosts[0] === 'http://127.0.0.1:9791/*' && !manifest.permissions, JSON.stringify({ host: hosts, perms: manifest.permissions }));
 
   // video inside an iframe: toolbar and key both show one panel, in the frame with the video
   await page.goto(BASE + 'frame.html');
@@ -459,9 +555,11 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   else check('Chromium: panel moves into the full-screen element', fsOk === 'inside', fsOk);
 
   // what each service offers anywhere vs this browser
-  for (const o of ['https://www.netflix.com', 'https://www.amcplus.com', 'https://www.amazon.com']) await serveAs(ctx, o);
+  for (const o of ['https://www.netflix.com', 'https://www.amcplus.com', 'https://www.amazon.com', 'https://www.disneyplus.com', 'https://www.hulu.com']) await serveAs(ctx, o);
   await serveAs(ctx, 'https://www.primevideo.com', 'clip720.mp4');
-  await serviceCase('Chromium: Netflix at Chrome’s 1080p cap says where more is', ctx, page, 'https://www.netflix.com/watch/hudtest', [  /Computer best: up to 4K Dolby Vision in Safari on a Mac \(Premium; not every film\)/, /Not on this Mac: Dolby Atmos \(Windows: Edge or the Netflix app; Premium\)\./,  /Netflix\s+up to 1080p in Chrome/, /best anywhere: 4K HDR \(Dolby Vision\)/]);
+  await serviceCase('Chromium: Netflix at Chrome’s 1080p cap says where more is', ctx, page, 'https://www.netflix.com/watch/hudtest', [  /Computer best: up to 4K Dolby Vision in Safari on a Mac \(Premium; not every film\)/, /Not on this Mac: Dolby Atmos \(Windows: Edge or the Netflix app; Premium\)\./,  /Netflix\s+up to 1080p in Chrome/, /best anywhere: 4K HDR \(Dolby Vision\)/], [/above that/]);
+  await serviceCase('Chromium: Disney+ playing 1080p above its published 720p says so', ctx, page, 'https://www.disneyplus.com/play/hudtest', [/Disney\+\s+says up to 720p in Chrome/, /this film plays 1080p, above that · best anywhere: 4K HDR \(Dolby Vision\)/], [/Disney\+\s+up to 720p in Chrome/]);
+  await serviceCase('Chromium: Hulu playing 1080p above its published 720p says so in its limits', ctx, page, 'https://www.hulu.com/watch/hudtest', [/Hulu\s+says up to 720p in Chrome/, /Picture limits\s+Website: up to 720p\s+Published service capability; this film plays 1080p, above it\./]);
   await serviceCase('Chromium: AMC+ limits are unknown, so no verdict and no “elsewhere” line', ctx, page, 'https://www.amcplus.com/movies/hudtest', [/AMC\+\s+limit for Chrome: unknown/, /best anywhere: unknown/, /Computer best: unknown for AMC\+\./, /Needs .*video (bitrate|codec)/], [/Elsewhere:/, /AMC\+ sends/, /Computer best: unknown(?! for)/]);
   await serviceCase('Chromium: Prime Video (amazon.com/gp/video) 1080p is within its “HD”', ctx, page, 'https://www.amazon.com/gp/video/detail/hudtest', [ /Computer best: HD, in browsers and the Mac and Windows apps/, /Prime Video\s+up to HD in Chrome/, /Published for TV apps: 4K Dolby Vision, Dolby Atmos \(US 4K needs Prime Video Ultra\)\./, /Computer best: stereo, in browsers and the Mac and Windows apps/, /best anywhere: Dolby Atmos/]);
   const prime1080Title = await page.evaluate(() => document.querySelector('[data-stream-quality-hud]').shadowRoot.querySelector('.head .t').textContent);
@@ -471,6 +569,8 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   check('Chromium: Prime Video 720p has no invented best claim', /720p/.test(primeTitle) && !/best/.test(primeTitle), primeTitle);
   await serviceCase('Chromium: ordinary amazon.com pages get no service rows', ctx, page, 'https://www.amazon.com/some-product/dp/hudtest', [/Playing/], [/Prime Video/]);
   await scorecardChecks('Chromium', ctx, page);
+  await filmCardChecks('Chromium', page);
+  await measureChecks({ chromium, webkit, check, EXT, BASE, FIX, page, ctx });
   await ctx.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }
@@ -490,6 +590,7 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'WebKit') {
   await shortWindow('WebKit', page);
   await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /720p|1080p/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
   await soundCases('WebKit', page, errors);
+  await pillChecks('WebKit', page);
   {
     const ctxB = await browser.newContext();
     await ctxB.addInitScript({ path: path.join(EXT, 'hud.js') });
@@ -589,6 +690,7 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'WebKit') {
   check('WebKit (userscript): no page errors', errors2.length === 0, errors2.join('\n'));
   await ctx2.close();
   await scorecardChecks('WebKit', ctx, page);
+  await filmCardChecks('WebKit', page);
   await browser.close();
 }
 

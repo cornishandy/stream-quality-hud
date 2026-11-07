@@ -14,9 +14,17 @@ OUT="$ROOT/dist/stream-quality-hud.user.js"
 // @match        *://*/*
 // @run-at       document-start
 // @inject-into  content
+// @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @connect      127.0.0.1
 // ==/UserScript==
 
 HEADER
+  python3 -c 'import json,pathlib,sys; print("globalThis.SQH_PAGE_HOOK_SOURCE = " + json.dumps(pathlib.Path(sys.argv[1]).read_text()) + ";")' "$ROOT/extension/page-hook.js"
   cat "$ROOT/extension/hud.js"
 } > "$OUT"
 echo "built $OUT ($VERSION)"

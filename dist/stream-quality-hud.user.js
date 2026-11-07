@@ -1,15 +1,26 @@
 // ==UserScript==
 // @name         Stream Quality HUD
 // @description  Shows current playback, streaming and disc data grades, and relevant playback issues. A button over the video or Control+Shift+H opens it.
-// @version      1.9.0
+// @version      1.13.1
 // @match        *://*/*
 // @run-at       document-start
 // @inject-into  content
+// @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @connect      127.0.0.1
 // ==/UserScript==
 
+globalThis.SQH_PAGE_HOOK_SOURCE = "/*sqh-reader*/\n(function (g) {\n  'use strict';\n  var CAP = 1024 * 1024;\n  var SAMPLE_CAP = 30000;\n  var QUEUE_CAP = 600;\n  var QUEUE_BYTES = 3 * 1024 * 1024;\n  var PIN_CAP = 16;\n  var VERSION = '1.13.1';\n\n  function u32(b, o) {\n    return ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;\n  }\n  function u64(b, o) {\n    return u32(b, o) * 4294967296 + u32(b, o + 4);\n  }\n  function i32(b, o) {\n    return u32(b, o) | 0;\n  }\n  function i64(b, o) {\n    return i32(b, o) * 4294967296 + u32(b, o + 4);\n  }\n  function fourcc(b, o) {\n    return String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]);\n  }\n  function ascii(b, o) {\n    for (var i = 0; i < 4; i++) if (b[o + i] < 0x20 || b[o + i] > 0x7e) return false;\n    return true;\n  }\n  function children(buf, start, end) {\n    var out = [];\n    var p = start;\n    while (p + 8 <= end) {\n      var sz = u32(buf, p);\n      var h = 8;\n      if (sz === 1) {\n        if (p + 16 > end) break;\n        sz = u64(buf, p + 8);\n        h = 16;\n      } else if (sz === 0) sz = end - p;\n      if (!(sz >= h) || p + sz > end) break;\n      out.push({ type: fourcc(buf, p + 4), payload: p + h, end: p + sz });\n      p += sz;\n    }\n    return out;\n  }\n  function child(buf, box, type) {\n    if (!box) return null;\n    var list = children(buf, box.payload, box.end);\n    for (var i = 0; i < list.length; i++) if (list[i].type === type) return list[i];\n    return null;\n  }\n  // encv/enca hide the real codec in a sinf/frma child. The compressor-name\n  // field can contain those same four bytes, so this walk never scans raw bytes.\n  function originalCodec(buf, entryStart, entryEnd, type) {\n    var origins = type === 'encv' ? [86] : [36, 52];\n    for (var oi = 0; oi < origins.length; oi++) {\n      var from = entryStart + origins[oi];\n      if (from >= entryEnd) continue;\n      var list = children(buf, from, entryEnd);\n      for (var i = 0; i < list.length; i++) {\n        if (list[i].type !== 'sinf') continue;\n        var frma = child(buf, list[i], 'frma');\n        if (!frma || frma.payload + 4 > frma.end) continue;\n        return fourcc(buf, frma.payload);\n      }\n    }\n    return type;\n  }\n\n  function newParser(ms, sb) {\n    return {\n      ms: ms, sb: sb, hdr: [], hdrNeed: 8, phase: 'hdr', kind: '', left: 0, size0: false,\n      copy: null, filled: 0, boxType: '', needRap: true, moovSeen: false, joinedLate: false,\n      firstDecided: false, sawAny: false, dead: false, tracks: [], trex: new Map(),\n      waiters: [], ready: [], pendingInits: [], sent: {}, vide: 0, win: { offset: 0, w0: 0, w1: Infinity },\n      pos: 0, moofAt: 0, mdatAt: 0, arrived: [], appendCount: 0, pendingRemove: null,\n    };\n  }\n  function snapOf(st) {\n    return {\n      hdr: st.hdr.slice(), hdrNeed: st.hdrNeed, phase: st.phase, kind: st.kind, left: st.left,\n      size0: st.size0, copy: st.copy, filled: st.filled, boxType: st.boxType, needRap: st.needRap,\n      moovSeen: st.moovSeen, joinedLate: st.joinedLate, firstDecided: st.firstDecided, sawAny: st.sawAny,\n      dead: st.dead, tracks: st.tracks, trex: st.trex, waiters: st.waiters.slice(), readyLen: st.ready.length,\n      inits: st.pendingInits.slice(), sent: Object.assign({}, st.sent), vide: st.vide,\n      pos: st.pos, moofAt: st.moofAt, mdatAt: st.mdatAt, appendCount: st.appendCount,\n      arrived: st.arrived.map(function (r) { return [r[0], r[1]]; }),\n    };\n  }\n  function restore(st, s) {\n    st.hdr = s.hdr; st.hdrNeed = s.hdrNeed; st.phase = s.phase; st.kind = s.kind; st.left = s.left;\n    st.size0 = s.size0; st.copy = s.copy; st.filled = s.filled; st.boxType = s.boxType; st.needRap = s.needRap;\n    st.moovSeen = s.moovSeen; st.joinedLate = s.joinedLate; st.firstDecided = s.firstDecided; st.sawAny = s.sawAny;\n    st.dead = s.dead; st.tracks = s.tracks; st.trex = s.trex; st.waiters = s.waiters; st.ready.length = s.readyLen;\n    st.pendingInits = s.inits; st.sent = s.sent; st.vide = s.vide;\n    st.pos = s.pos; st.moofAt = s.moofAt; st.mdatAt = s.mdatAt; st.appendCount = s.appendCount; st.arrived = s.arrived;\n  }\n  function resetPartial(st) {\n    st.hdr = []; st.hdrNeed = 8; st.phase = 'hdr'; st.kind = ''; st.left = 0; st.size0 = false;\n    st.copy = null; st.filled = 0; st.boxType = ''; st.waiters = []; st.ready = []; st.pendingInits = [];\n  }\n\n  function createBus() {\n    var bus = {\n      session: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),\n      seq: 0, stopped: '', closed: false, sink: function () {}, parseTimes: [], recent: [],\n      pinned: new Map(), pending: [], flushTimer: 0, parsers: [],\n    };\n    bus.emit = function (rec) {\n      if (bus.closed) return;\n      rec.session = bus.session;\n      rec.seq = ++bus.seq;\n      bus.sink(rec);\n    };\n    bus.halt = function (why) {\n      if (bus.stopped) return;\n      bus.stopped = why;\n      bus.emit({ t: 'st', why: why, ms: '', sb: '' });\n      bus.closed = true;\n    };\n    bus.noteTime = function (dt) {\n      bus.parseTimes.push(dt);\n      if (bus.parseTimes.length > 5000) bus.parseTimes.shift();\n      var now = g.performance && g.performance.now ? g.performance.now() : 0;\n      bus.recent.push({ t: now, dt: dt });\n      var i = 0;\n      while (i < bus.recent.length && now - bus.recent[i].t > 60000) i++;\n      if (i) bus.recent.splice(0, i);\n    };\n    bus.over = function (dt) {\n      if (dt > 8) return true;\n      var s = 0;\n      for (var i = 0; i < bus.recent.length; i++) s += bus.recent[i].dt;\n      return s > 600;\n    };\n    return bus;\n  }\n\n  function status(bus, st, why) {\n    if (st.sent[why]) return;\n    st.sent[why] = true;\n    bus.emit({ t: 'st', why: why, ms: st.ms, sb: st.sb });\n  }\n\n  function parseStsd(buf, box) {\n    var entries = [];\n    if (!box) return entries;\n    var count = u32(buf, box.payload + 4);\n    var p = box.payload + 8;\n    for (var i = 0; i < count && p + 8 <= box.end; i++) {\n      var sz = u32(buf, p);\n      if (sz < 8 || p + sz > box.end) break;\n      var type = fourcc(buf, p + 4);\n      var w = sz >= 36 ? (buf[p + 32] << 8) | buf[p + 33] : 0;\n      var h = sz >= 36 ? (buf[p + 34] << 8) | buf[p + 35] : 0;\n      var codec = (type === 'encv' || type === 'enca') ? originalCodec(buf, p, p + sz, type) : type;\n      entries.push({ type: type, codec: codec, w: w, h: h });\n      p += sz;\n    }\n    return entries;\n  }\n  function parseElst(buf, trak) {\n    var edts = child(buf, trak, 'edts');\n    var elst = child(buf, edts, 'elst');\n    if (!elst) return { ok: true, mediaTime: 0 };\n    var ver = buf[elst.payload];\n    var n = u32(buf, elst.payload + 4);\n    var p = elst.payload + 8;\n    var entries = [];\n    for (var i = 0; i < n; i++) {\n      var mediaTime, rateInt, rateFrac, step;\n      if (ver === 1) {\n        if (p + 20 > elst.end) return { ok: false };\n        mediaTime = i64(buf, p + 8);\n        rateInt = (buf[p + 16] << 8) | buf[p + 17];\n        rateFrac = (buf[p + 18] << 8) | buf[p + 19];\n        step = 20;\n      } else {\n        if (p + 12 > elst.end) return { ok: false };\n        mediaTime = i32(buf, p + 4);\n        rateInt = (buf[p + 8] << 8) | buf[p + 9];\n        if (rateInt & 0x8000) rateInt -= 0x10000;\n        rateFrac = (buf[p + 10] << 8) | buf[p + 11];\n        step = 12;\n      }\n      entries.push({ mediaTime: mediaTime, rateInt: rateInt, rateFrac: rateFrac });\n      p += step;\n    }\n    var nonempty = [];\n    for (var j = 0; j < entries.length; j++) if (entries[j].mediaTime !== -1) nonempty.push(entries[j]);\n    if (!nonempty.length && !entries.length) return { ok: true, mediaTime: 0 };\n    if (nonempty.length !== 1) return { ok: false };\n    if (nonempty[0].rateInt !== 1 || nonempty[0].rateFrac !== 0) return { ok: false };\n    return { ok: true, mediaTime: nonempty[0].mediaTime };\n  }\n  function parseTrak(buf, trak) {\n    var tkhd = child(buf, trak, 'tkhd');\n    var mdia = child(buf, trak, 'mdia');\n    var mdhd = child(buf, mdia, 'mdhd');\n    var hdlr = child(buf, mdia, 'hdlr');\n    var minf = child(buf, mdia, 'minf');\n    var stbl = child(buf, minf, 'stbl');\n    var stsd = child(buf, stbl, 'stsd');\n    if (!tkhd || !mdhd || !hdlr) return null;\n    var ver = buf[tkhd.payload];\n    var trackId = u32(buf, tkhd.payload + (ver === 1 ? 16 : 12));\n    var handler = fourcc(buf, hdlr.payload + 8);\n    var mdv = buf[mdhd.payload];\n    var timescale = u32(buf, mdhd.payload + (mdv === 1 ? 20 : 12));\n    var edit = parseElst(buf, trak);\n    return { id: trackId, handler: handler, timescale: timescale, entries: parseStsd(buf, stsd), edit: edit };\n  }\n  function parseMoov(bus, st, buf) {\n    var boxes = children(buf, 0, buf.length);\n    var trex = new Map();\n    for (var i = 0; i < boxes.length; i++) {\n      if (boxes[i].type !== 'mvex') continue;\n      var kids = children(buf, boxes[i].payload, boxes[i].end);\n      for (var k = 0; k < kids.length; k++) {\n        if (kids[k].type !== 'trex') continue;\n        var p = kids[k].payload;\n        trex.set(u32(buf, p + 4), {\n          desc: u32(buf, p + 8), dur: u32(buf, p + 12), size: u32(buf, p + 16), flags: u32(buf, p + 20),\n        });\n      }\n    }\n    var tracks = [];\n    var vide = 0;\n    var timingBad = false;\n    for (var t = 0; t < boxes.length; t++) {\n      if (boxes[t].type !== 'trak') continue;\n      var tr = parseTrak(buf, boxes[t]);\n      if (!tr) continue;\n      tracks.push(tr);\n      if (tr.handler === 'vide') {\n        vide++;\n        if (!tr.edit.ok) timingBad = true;\n      }\n    }\n    st.tracks = tracks;\n    st.trex = trex;\n    st.vide = vide;\n    st.moovSeen = true;\n    if (st.joinedLate) {\n      st.joinedLate = false;\n      bus.emit({ t: 'st', why: 'joined-clear', ms: st.ms, sb: st.sb });\n      st.sent.joined = false;\n    }\n    var described = [];\n    for (var a = 0; a < tracks.length; a++) {\n      if (tracks[a].handler !== 'vide') continue;\n      var e0 = tracks[a].entries[0] || { codec: '', w: 0, h: 0 };\n      described.push({ id: tracks[a].id, codec: e0.codec, w: e0.w, h: e0.h });\n    }\n    st.pendingInits.push({ t: 'init', ms: st.ms, sb: st.sb, vide: vide, tracks: described });\n    if (timingBad) status(bus, st, 'timing');\n    var total = 0;\n    for (var q = 0; q < bus.parsers.length; q++) {\n      if (bus.parsers[q].ms === st.ms && !bus.parsers[q].dead) total += bus.parsers[q].vide || 0;\n    }\n    if (total > 1) status(bus, st, 'several');\n  }\n\n  function trackById(st, id) {\n    for (var i = 0; i < st.tracks.length; i++) if (st.tracks[i].id === id) return st.tracks[i];\n    return null;\n  }\n  function addArrived(st, a, b) {\n    if (!(b > a)) return;\n    st.arrived.push([a, b]);\n    st.arrived.sort(function (x, y) { return x[0] - y[0]; });\n    var out = [];\n    for (var i = 0; i < st.arrived.length; i++) {\n      var cur = st.arrived[i];\n      if (!out.length || cur[0] > out[out.length - 1][1]) out.push(cur);\n      else if (cur[1] > out[out.length - 1][1]) out[out.length - 1][1] = cur[1];\n    }\n    st.arrived = out;\n  }\n  function rangeCovered(st, a, b) {\n    if (!(b > a)) return true;\n    var x = a;\n    for (var i = 0; i < st.arrived.length; i++) {\n      var r = st.arrived[i];\n      if (r[1] <= x) continue;\n      if (r[0] > x) return false;\n      x = r[1];\n      if (x >= b) return true;\n    }\n    return x >= b;\n  }\n  function releaseCovered(st) {\n    if (!st.waiters.length) return;\n    var stay = [];\n    for (var i = 0; i < st.waiters.length; i++) {\n      var w = st.waiters[i];\n      var ok = true;\n      var ranges = w.ranges || [];\n      for (var s = 0; s < ranges.length; s++) {\n        if (!rangeCovered(st, ranges[s][0], ranges[s][1])) { ok = false; break; }\n      }\n      if (ok) { w.mdatDone = true; st.ready.push(w); }\n      else stay.push(w);\n    }\n    st.waiters = stay;\n  }\n  function parseMoof(bus, st, buf) {\n    if (!st.moovSeen || st.joinedLate) return;\n    var boxes = children(buf, 0, buf.length);\n    var samples = [];\n    var ranges = [];\n    var meta = null;\n    var unknownKey = false;\n    var timingBad = false;\n    for (var i = 0; i < boxes.length; i++) {\n      if (boxes[i].type !== 'traf') continue;\n      var kids = children(buf, boxes[i].payload, boxes[i].end);\n      var tfhd = null, tfdt = null, truns = [];\n      for (var k = 0; k < kids.length; k++) {\n        if (kids[k].type === 'tfhd') tfhd = kids[k];\n        else if (kids[k].type === 'tfdt') tfdt = kids[k];\n        else if (kids[k].type === 'trun') truns.push(kids[k]);\n      }\n      if (!tfhd) continue;\n      var flags = u32(buf, tfhd.payload) & 0xffffff;\n      var p = tfhd.payload + 4;\n      var trackId = u32(buf, p); p += 4;\n      // Sample bytes are moof-base + trun data_offset + earlier sizes in that run.\n      // Flag 0x1 is an absolute base. Flag 0x020000 means the base is the moof box.\n      var baseFile = st.pos;\n      if (flags & 1) { baseFile = u64(buf, p); p += 8; }\n      else if (flags & 0x020000) baseFile = st.moofAt;\n      var desc = null, defDur = null, defSize = null, defFlags = null;\n      if (flags & 2) { desc = u32(buf, p); p += 4; }\n      if (flags & 8) { defDur = u32(buf, p); p += 4; }\n      if (flags & 16) { defSize = u32(buf, p); p += 4; }\n      if (flags & 32) { defFlags = u32(buf, p); p += 4; }\n      var tr = trackById(st, trackId);\n      var tx = st.trex.get(trackId);\n      if (!tr || tr.handler !== 'vide') continue;\n      if (!tr.edit.ok) { timingBad = true; continue; }\n      var idx = desc != null ? desc : tx ? tx.desc : 1;\n      if (!(idx >= 1)) idx = 1;\n      var entry = tr.entries[idx - 1] || tr.entries[0] || { codec: '', w: 0, h: 0 };\n      meta = { track: trackId, cfg: { w: entry.w, h: entry.h, codec: entry.codec }, timescale: tr.timescale, mediaTime: tr.edit.mediaTime };\n      var base = 0;\n      if (tfdt) {\n        var tv = buf[tfdt.payload];\n        base = tv === 1 ? u64(buf, tfdt.payload + 4) : u32(buf, tfdt.payload + 4);\n      }\n      var dts = base;\n      var emptyDur = !!(flags & 0x010000);\n      for (var r = 0; r < truns.length; r++) {\n        var tb = truns[r];\n        var vf = u32(buf, tb.payload);\n        var version = vf >>> 24;\n        var f = vf & 0xffffff;\n        var q = tb.payload + 4;\n        var count = u32(buf, q); q += 4;\n        // The cap is the whole append, across every trun, and it is checked before the loop.\n        if ((st.appendCount || 0) + count > SAMPLE_CAP) { bus.halt('safety'); return; }\n        st.appendCount += count;\n        var dataOff = 0;\n        if (f & 1) { dataOff = i32(buf, q); q += 4; }\n        var byteAt = baseFile + dataOff;\n        var firstFlags = null;\n        if (f & 4) { firstFlags = u32(buf, q); q += 4; }\n        var sb = (f & 0x100 ? 4 : 0) + (f & 0x200 ? 4 : 0) + (f & 0x400 ? 4 : 0) + (f & 0x800 ? 4 : 0);\n        if (q + count * sb > tb.end) { st.dead = true; status(bus, st, 'unparsed'); return; }\n        for (var n = 0; n < count; n++) {\n          var dur = defDur != null ? defDur : tx ? tx.dur : 0;\n          var size = defSize != null ? defSize : tx ? tx.size : 0;\n          var sampleFlags = null;\n          if (f & 0x100) { dur = u32(buf, q); q += 4; }\n          if (f & 0x200) { size = u32(buf, q); q += 4; }\n          if (f & 0x400) { sampleFlags = u32(buf, q); q += 4; }\n          var cto = 0;\n          if (f & 0x800) { cto = version === 1 ? i32(buf, q) : u32(buf, q); q += 4; }\n          var sf = n === 0 && firstFlags != null ? firstFlags : sampleFlags != null ? sampleFlags : defFlags != null ? defFlags : tx ? tx.flags : null;\n          if (emptyDur) dur = 0;\n          var key = sf == null ? null : (sf & 0x10000) ? 0 : 1;\n          if (key == null) unknownKey = true;\n          var pts = dts + cto - tr.edit.mediaTime;\n          dts += dur;\n          var b0 = byteAt;\n          byteAt += size;\n          if (unknownKey || timingBad || bus.stopped) continue;\n          var sec0 = pts / tr.timescale + st.win.offset;\n          var sec1 = (pts + dur) / tr.timescale + st.win.offset;\n          // The browser keeps a sample only when its whole interval sits inside the append window.\n          if (sec0 < st.win.w0 || sec1 > st.win.w1) { st.needRap = true; continue; }\n          if (st.needRap) {\n            if (key !== 1) continue;\n            st.needRap = false;\n          }\n          samples.push([pts, dur, size, key]);\n          ranges.push([b0, b0 + (size > 0 ? size : 0)]);\n        }\n      }\n    }\n    if (bus.stopped) return;\n    if (timingBad) { status(bus, st, 'timing'); return; }\n    if (unknownKey) { status(bus, st, 'keyframes'); return; }\n    if (!meta || !samples.length) return;\n    st.waiters.push({\n      mdatDone: false,\n      ranges: ranges,\n      rec: {\n        t: 'f', ms: st.ms, sb: st.sb, track: meta.track, cfg: meta.cfg,\n        samples: samples, timescale: meta.timescale, offset: st.win.offset,\n      },\n    });\n  }\n\n  function finishBox(bus, st) {\n    var type = st.boxType;\n    var payload = st.copy;\n    var mdatFrom = st.mdatAt;\n    var mdatTo = st.pos;\n    st.phase = 'hdr'; st.kind = ''; st.copy = null; st.filled = 0; st.left = 0; st.size0 = false; st.boxType = '';\n    if (st.dead || bus.stopped) return;\n    if (type === 'moov') parseMoov(bus, st, payload);\n    else if (type === 'moof') { parseMoof(bus, st, payload); if (!bus.stopped) releaseCovered(st); }\n    else if (type === 'mdat') { addArrived(st, mdatFrom, mdatTo); if (!bus.stopped) releaseCovered(st); }\n  }\n  function openBox(bus, st) {\n    var b = st.hdr;\n    var size32 = ((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]) >>> 0;\n    if (!st.sawAny) {\n      st.sawAny = true;\n      if (!ascii(b, 4) || (size32 !== 0 && size32 !== 1 && size32 < 8)) {\n        st.dead = true; status(bus, st, 'unparsed'); return false;\n      }\n    }\n    if (!ascii(b, 4)) { st.dead = true; status(bus, st, 'unparsed'); return false; }\n    if (size32 === 1 && st.hdrNeed < 16) { st.hdrNeed = 16; return true; }\n    var headerLen = 8;\n    var total = size32;\n    if (size32 === 1) {\n      headerLen = 16;\n      total = u64(b, 8);\n      if (!(total >= 16)) { st.dead = true; status(bus, st, 'unparsed'); return false; }\n    } else if (size32 !== 0 && size32 < 8) { st.dead = true; status(bus, st, 'unparsed'); return false; }\n    var payload = total === 0 ? Infinity : total - headerLen;\n    var type = fourcc(b, 4);\n    st.hdr = []; st.hdrNeed = 8; st.boxType = type; st.phase = 'body'; st.left = payload; st.size0 = total === 0;\n    st.boxStart = st.pos - headerLen;\n    if (type === 'moof') st.moofAt = st.boxStart;\n    if (type === 'mdat') st.mdatAt = st.pos;\n    if (type === 'moov' || type === 'moof') {\n      if (!(payload > 0) || payload === Infinity || payload > CAP) { bus.halt('safety'); st.dead = true; return false; }\n      st.kind = 'copy'; st.copy = new Uint8Array(payload); st.filled = 0;\n    } else if (type === 'mdat') st.kind = 'mdat';\n    else st.kind = 'skip';\n    return true;\n  }\n  function feed(bus, st, bytes) {\n    if (st.dead || bus.stopped) return;\n    st.appendCount = 0;\n    var i = 0;\n    var n = bytes.length;\n    while (i < n && !st.dead && !bus.stopped) {\n      if (st.phase === 'hdr') {\n        var take = Math.min(st.hdrNeed - st.hdr.length, n - i);\n        for (var k = 0; k < take; k++) st.hdr.push(bytes[i++]);\n        st.pos += take;\n        if (st.hdr.length < st.hdrNeed) break;\n        if (!openBox(bus, st)) return;\n        continue;\n      }\n      var room = n - i;\n      var use = st.left === Infinity ? room : Math.min(st.left, room);\n      if (use < 0) use = 0;\n      if (st.kind === 'copy' && use) { st.copy.set(bytes.subarray(i, i + use), st.filled); st.filled += use; }\n      i += use;\n      st.pos += use;\n      if (st.left !== Infinity) {\n        st.left -= use;\n        if (st.left === 0) finishBox(bus, st);\n      }\n    }\n    if (!st.dead && !bus.stopped && st.phase === 'body' && st.left === Infinity) finishBox(bus, st);\n    if (!st.firstDecided && st.phase === 'hdr' && st.hdr.length === 0) {\n      st.firstDecided = true;\n      if (!st.moovSeen) { st.joinedLate = true; status(bus, st, 'joined'); }\n    }\n  }\n  function takeReady(bus, st) {\n    var out = st.pendingInits.splice(0, st.pendingInits.length);\n    var ready = st.ready.splice(0, st.ready.length);\n    for (var i = 0; i < ready.length; i++) if (ready[i].mdatDone) out.push(ready[i].rec);\n    for (var j = 0; j < out.length; j++) {\n      if (out[j].t === 'init') {\n        if (!bus.pinned.has(st.sb) && bus.pinned.size >= PIN_CAP) { bus.halt('safety'); return; }\n        bus.pinned.set(st.sb, out[j]);\n      }\n      bus.emit(out[j]);\n    }\n  }\n\n  function makeTest() {\n    var bus = createBus();\n    var st = newParser('ms', 'sb');\n    bus.parsers.push(st);\n    var got = [];\n    bus.sink = function (rec) { got.push(rec); };\n    return {\n      feed: function (bytes, opts) {\n        opts = opts || {};\n        var before = got.length;\n        if (bus.stopped) return { records: [], stopped: bus.stopped };\n        if (opts.abort) {\n          resetPartial(st); st.needRap = true; st.inflight = null;\n          return { records: [], stopped: bus.stopped };\n        }\n        st.win = { offset: opts.offset || 0, w0: opts.w0 || 0, w1: opts.w1 == null ? Infinity : opts.w1 };\n        if (opts.mode === 'sequence') { status(bus, st, 'sequence'); return { records: got.slice(before), stopped: bus.stopped }; }\n        var snap = snapOf(st);\n        var t0 = g.performance && g.performance.now ? g.performance.now() : 0;\n        try { feed(bus, st, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)); }\n        catch (e) { restore(st, snap); }\n        var dt = (g.performance && g.performance.now ? g.performance.now() : 0) - t0;\n        bus.noteTime(dt);\n        if (opts.fail || bus.over(dt)) {\n          restore(st, snap);\n          if (bus.over(dt)) bus.halt('killed');\n        } else takeReady(bus, st);\n        return { records: got.slice(before), stopped: bus.stopped, times: bus.parseTimes.slice() };\n      },\n    };\n  }\n\n  // Queues records, then sizes, encodes and sends them in a later task, never inside the player's call.\n  // The replay keeps the newest encoded records within both caps; a late HUD shows any older gap as missing coverage.\n  function createTransport(bus, timers, send) {\n    var pending = [], timer = 0, replay = [], replaySeq = [], replayBytes = 0;\n    function encode(rec) {\n      try { return JSON.stringify(rec); } catch (e) { return ''; }\n    }\n    function deliver(parts) {\n      var list = [];\n      for (var i = 0; i < parts.length; i++) if (parts[i]) list.push(parts[i]);\n      if (list.length) send('{\"session\":' + JSON.stringify(bus.session) + ',\"records\":[' + list.join(',') + ']}');\n    }\n    function flush() {\n      timer = 0;\n      var records = pending;\n      pending = [];\n      var parts = [], total = 0;\n      for (var i = 0; i < records.length; i++) {\n        var str = encode(records[i]);\n        parts.push(str);\n        total += str.length;\n      }\n      if (!bus.stopped && total > QUEUE_BYTES) { bus.halt('safety'); return; }\n      for (var j = 0; j < records.length; j++) {\n        if (!parts[j]) continue;\n        replay.push(parts[j]);\n        replaySeq.push(records[j].seq);\n        replayBytes += parts[j].length;\n      }\n      while (replay.length && (replay.length > QUEUE_CAP || replayBytes > QUEUE_BYTES)) {\n        replayBytes -= replay.shift().length;\n        replaySeq.shift();\n      }\n      deliver(parts);\n    }\n    return {\n      sink: function (rec) {\n        if (bus.stopped && !(rec.t === 'st' && rec.why === bus.stopped)) return;\n        if (!bus.stopped && pending.length >= QUEUE_CAP) { bus.halt('safety'); return; }\n        pending.push(rec);\n        if (!timer) timer = timers.setTimeout(flush, 0) || 1;\n      },\n      replay: function () {\n        var items = [];\n        bus.pinned.forEach(function (rec) { items.push({ seq: rec.seq, str: encode(rec) }); });\n        for (var i = 0; i < replay.length; i++) items.push({ seq: replaySeq[i], str: replay[i] });\n        items.sort(function (a, b) { return a.seq - b.seq; });\n        deliver(items.map(function (it) { return it.str; }));\n      },\n      bytes: function () { return replayBytes; },\n    };\n  }\n\n  if (g && g.SQH_READER_TEST) {\n    g.SQH_READER_API = makeTest();\n    g.SQH_READER_API.createBus = createBus;\n    g.SQH_READER_API.createTransport = createTransport;\n    return;\n  }\n  if (!g || !g.document || !g.window) return;\n  var MARK = Symbol.for('sqh.reader');\n  try {\n    if (g[MARK]) return;\n    Object.defineProperty(g, MARK, { value: true, configurable: false, enumerable: false, writable: false });\n  } catch (e) { return; }\n\n  var bus = createBus();\n  var bySb = new WeakMap();\n  var msIds = new WeakMap();\n  var sbIds = new WeakMap();\n  var blobs = new Map();\n  var msN = 0, sbN = 0;\n  var releasedMs = new Set();\n  function msId(ms) {\n    var id = msIds.get(ms);\n    if (!id) { id = 'ms' + (++msN); msIds.set(ms, id); }\n    return id;\n  }\n  function sbId(sb) {\n    var id = sbIds.get(sb);\n    if (!id) { id = 'sb' + (++sbN); sbIds.set(sb, id); }\n    return id;\n  }\n  var transport = createTransport(bus, g, function (detail) {\n    try { g.document.dispatchEvent(new g.CustomEvent('sqh:pieces', { detail: detail })); } catch (e) {}\n  });\n  bus.sink = transport.sink;\n  function isMS(o) {\n    if (!o || typeof o !== 'object') return false;\n    try { if (typeof g.MediaSource !== 'undefined' && o instanceof g.MediaSource) return true; } catch (e) {}\n    try { if (typeof g.ManagedMediaSource !== 'undefined' && o instanceof g.ManagedMediaSource) return true; } catch (e) {}\n    return false;\n  }\n  function isHandle(o) {\n    if (!o || typeof o !== 'object') return false;\n    try { if (typeof g.MediaSourceHandle !== 'undefined' && o instanceof g.MediaSourceHandle) return true; } catch (e) {}\n    var n = o.constructor && o.constructor.name;\n    return n === 'MediaSourceHandle';\n  }\n  function ownerOf(video) {\n    try {\n      var so = video.srcObject;\n      if (isMS(so)) return msId(so);\n      if (isHandle(so)) return 'worker';\n    } catch (e) {}\n    try {\n      var u = video.currentSrc || video.src || '';\n      if (u && blobs.has(u)) return blobs.get(u);\n    } catch (e2) {}\n    return 'none';\n  }\n  function bytesOf(buf) {\n    try {\n      if (buf instanceof ArrayBuffer) return new Uint8Array(buf);\n      if (ArrayBuffer.isView(buf)) return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);\n    } catch (e) {}\n    return null;\n  }\n  function parserFor(sb) {\n    var st = bySb.get(sb);\n    if (st) return st;\n    var ms = '';\n    try { if (sb && isMS(sb.mediaSource || sb.source || null)) ms = msId(sb.mediaSource || sb.source); } catch (e) {}\n    st = newParser(ms, sbId(sb));\n    bySb.set(sb, st);\n    bus.parsers.push(st);\n    return st;\n  }\n  function bindSb(ms, sb) {\n    var st = parserFor(sb);\n    st.ms = msId(ms);\n    if (st.listening) return;\n    st.listening = true;\n    sb.addEventListener('error', function () { st.failed = true; });\n    sb.addEventListener('updateend', function () {\n      try {\n        if (st.pendingRemove) {\n          var pr = st.pendingRemove;\n          st.pendingRemove = null;\n          if (st.failed || bus.stopped) { st.failed = false; return; }\n          var gaps = subtractRanges(pr.before, rangesOf(sb));\n          if (gaps.length) {\n            for (var gi = 0; gi < gaps.length; gi++) st.pendingInits.push({ t: 'rm', ms: st.ms, sb: st.sb, start: gaps[gi][0], end: gaps[gi][1] });\n          } else if (!pr.before.length && typeof pr.start === 'number' && typeof pr.end === 'number') {\n            st.pendingInits.push({ t: 'rm', ms: st.ms, sb: st.sb, start: pr.start, end: pr.end });\n          }\n          takeReady(bus, st);\n          return;\n        }\n        if (!st.inflight) return;\n        if (st.failed) { restore(st, st.inflight); st.failed = false; st.inflight = null; return; }\n        takeReady(bus, st);\n        st.inflight = null;\n      } catch (e) { st.inflight = null; st.pendingRemove = null; }\n    });\n  }\n  function rangesOf(sb) {\n    var out = [];\n    try {\n      var b = sb.buffered;\n      if (!b || typeof b.length !== 'number') return out;\n      for (var i = 0; i < b.length; i++) out.push([b.start(i), b.end(i)]);\n    } catch (e) {}\n    return out;\n  }\n  function subtractRanges(before, after) {\n    var gaps = [];\n    for (var i = 0; i < before.length; i++) {\n      var cuts = [[before[i][0], before[i][1]]];\n      for (var j = 0; j < after.length && cuts.length; j++) {\n        var c = after[j][0], d = after[j][1];\n        var next = [];\n        for (var k = 0; k < cuts.length; k++) {\n          var s = cuts[k][0], e = cuts[k][1];\n          if (!(d > s && c < e)) { next.push([s, e]); continue; }\n          if (c > s) next.push([s, c]);\n          if (d < e) next.push([d, e]);\n        }\n        cuts = next;\n      }\n      for (var n = 0; n < cuts.length; n++) if (cuts[n][1] > cuts[n][0]) gaps.push(cuts[n]);\n    }\n    return gaps;\n  }\n  function pageSeam() {\n    // A normal read does not call a getter that was defined on this realm's global\n    // from outside it. The descriptor does, so a throwing page-owned getter stops\n    // the wrapper before the native append.\n    var sym = Symbol.for('sqh.throwAppend');\n    var desc = Object.getOwnPropertyDescriptor(g, sym);\n    if (desc && typeof desc.get === 'function') return desc.get.call(g);\n    if (desc) return desc.value;\n    return g[sym];\n  }\n  function onAppend(sb, orig, args) {\n    var seam = pageSeam();\n    if (seam) throw seam;\n    var st = null;\n    var snap = null;\n    try {\n      st = bySb.get(sb) || parserFor(sb);\n      if (!bus.stopped && st && !st.dead) {\n        var mode = 'segments';\n        try { mode = sb.mode; } catch (e) {}\n        var offset = 0, w0 = 0, w1 = Infinity;\n        try { offset = sb.timestampOffset || 0; w0 = sb.appendWindowStart || 0; w1 = sb.appendWindowEnd; } catch (e2) {}\n        if (!(w1 > w0)) w1 = Infinity;\n        st.win = { offset: offset, w0: w0, w1: w1 };\n        if (mode === 'sequence') status(bus, st, 'sequence');\n        else {\n          snap = snapOf(st);\n          st.inflight = snap;\n          var bytes = bytesOf(args[0]);\n          var t0 = g.performance.now();\n          if (bytes) feed(bus, st, bytes);\n          var dt = g.performance.now() - t0;\n          bus.noteTime(dt);\n          if (bus.over(dt)) { restore(st, snap); st.inflight = null; bus.halt('killed'); }\n        }\n      }\n    } catch (e3) {\n      if (st && snap) { restore(st, snap); st.inflight = null; }\n    }\n    try { return orig.apply(sb, args); }\n    catch (err) {\n      if (st && snap) { restore(st, snap); st.inflight = null; }\n      throw err;\n    }\n  }\n  function onRemove(sb, orig, args) {\n    var st = null;\n    var before = null;\n    var numStart = null;\n    var numEnd = null;\n    try {\n      st = bySb.get(sb);\n      if (st && !bus.stopped) {\n        before = rangesOf(sb);\n        // typeof does not call valueOf, so an object start reaches the browser once.\n        if (typeof args[0] === 'number') numStart = args[0];\n        if (typeof args[1] === 'number') numEnd = args[1];\n      }\n    } catch (e) {}\n    var result = orig.apply(sb, args);\n    try {\n      if (st && before && !bus.stopped) st.pendingRemove = { before: before, start: numStart, end: numEnd };\n    } catch (e2) {}\n    return result;\n  }\n  function onAbort(sb, orig, args) {\n    try {\n      var st = bySb.get(sb);\n      if (st) { st.inflight = null; st.failed = false; st.pendingRemove = null; resetPartial(st); st.needRap = true; }\n    } catch (e) {}\n    return orig.apply(sb, args);\n  }\n  function wrap(proto, name, impl) {\n    if (!proto) return;\n    var orig = proto[name];\n    if (typeof orig !== 'function' || orig[MARK]) return;\n    function wrapped() {\n      try { return impl(this, orig, arguments); }\n      catch (err) { throw err; }\n    }\n    try { wrapped[MARK] = true; } catch (e) {}\n    proto[name] = wrapped;\n  }\n  function own(proto, name) {\n    return !!(proto && Object.prototype.hasOwnProperty.call(proto, name));\n  }\n  function dropMs(id) {\n    if (!id || releasedMs.has(id)) return;\n    releasedMs.add(id);\n    var keep = [];\n    for (var i = 0; i < bus.parsers.length; i++) {\n      var p = bus.parsers[i];\n      if (p.ms !== id) { keep.push(p); continue; }\n      p.dead = true;\n      p.waiters = [];\n      p.ready = [];\n      p.pendingInits = [];\n      p.tracks = [];\n      p.vide = 0;\n      p.inflight = null;\n      p.pendingRemove = null;\n      bus.pinned.delete(p.sb);\n    }\n    bus.parsers = keep;\n    blobs.forEach(function (v, k) { if (v === id) blobs.delete(k); });\n    try { bus.emit({ t: 'bye', ms: id, sb: '' }); } catch (err) {}\n  }\n  function watchMs(ms) {\n    if (!ms || ms[MARK]) return;\n    try { ms[MARK] = true; } catch (e) {}\n    ms.addEventListener('sourceclose', function () {\n      try { dropMs(msId(ms)); } catch (err) {}\n    });\n  }\n  function onAdd(ms, orig, args) {\n    var sb = orig.apply(ms, args);\n    try { watchMs(ms); bindSb(ms, sb); } catch (e) {}\n    return sb;\n  }\n  try {\n    if (g.MediaSource && g.MediaSource.prototype) wrap(g.MediaSource.prototype, 'addSourceBuffer', onAdd);\n    if (typeof g.ManagedMediaSource !== 'undefined' && g.ManagedMediaSource.prototype) wrap(g.ManagedMediaSource.prototype, 'addSourceBuffer', onAdd);\n    if (g.SourceBuffer && g.SourceBuffer.prototype) {\n      wrap(g.SourceBuffer.prototype, 'appendBuffer', onAppend);\n      wrap(g.SourceBuffer.prototype, 'remove', onRemove);\n      wrap(g.SourceBuffer.prototype, 'abort', onAbort);\n    }\n    if (typeof g.ManagedSourceBuffer !== 'undefined' && g.ManagedSourceBuffer.prototype) {\n      var mp = g.ManagedSourceBuffer.prototype;\n      if (own(mp, 'appendBuffer')) wrap(mp, 'appendBuffer', onAppend);\n      if (own(mp, 'remove')) wrap(mp, 'remove', onRemove);\n      if (own(mp, 'abort')) wrap(mp, 'abort', onAbort);\n    }\n  } catch (e) {}\n  try {\n    var create = g.URL && g.URL.createObjectURL;\n    if (typeof create === 'function' && !create[MARK]) {\n      function wrappedCreate(obj) {\n        var url = create.apply(g.URL, arguments);\n        try {\n          if (isMS(obj)) {\n            blobs.set(url, msId(obj));\n            if (blobs.size > 256) blobs.delete(blobs.keys().next().value);\n          }\n        } catch (err) {}\n        return url;\n      }\n      try { wrappedCreate[MARK] = true; } catch (e2) {}\n      g.URL.createObjectURL = wrappedCreate;\n    }\n    var revoke = g.URL && g.URL.revokeObjectURL;\n    if (typeof revoke === 'function' && !revoke[MARK]) {\n      function wrappedRevoke(url) {\n        try {\n          // Revoking the address doesn't detach an attached MediaSource; it is released on sourceclose.\n          void url;\n        } catch (err) {}\n        return revoke.apply(g.URL, arguments);\n      }\n      try { wrappedRevoke[MARK] = true; } catch (e2b) {}\n      g.URL.revokeObjectURL = wrappedRevoke;\n    }\n  } catch (e3) {}\n  try {\n    var desc = Object.getOwnPropertyDescriptor(g.HTMLMediaElement.prototype, 'srcObject');\n    if (desc && desc.set && !desc.set[MARK]) {\n      function wrappedSet(v) {\n        var prev = null;\n        try { prev = this.srcObject; } catch (err0) {}\n        try { if (isMS(v)) msId(v); } catch (err) {}\n        var out = desc.set.call(this, v);\n        try { if (isMS(prev) && prev !== v) dropMs(msId(prev)); } catch (err2) {}\n        return out;\n      }\n      try { wrappedSet[MARK] = true; } catch (e4) {}\n      Object.defineProperty(g.HTMLMediaElement.prototype, 'srcObject', {\n        set: wrappedSet, get: desc.get, configurable: true, enumerable: desc.enumerable,\n      });\n    }\n  } catch (e5) {}\n  g.document.addEventListener('sqh:which', function (e) {\n    var v = e.target;\n    if (!v || !v.tagName || v.tagName !== 'VIDEO') return;\n    var id = 'none';\n    try { id = ownerOf(v); } catch (err) {}\n    try { v.dispatchEvent(new g.CustomEvent('sqh:owner', { detail: String(id) })); } catch (err2) {}\n  }, true);\n  g.document.addEventListener('sqh:ping', function () {\n    try {\n      g.document.dispatchEvent(new g.CustomEvent('sqh:pong', { detail: JSON.stringify({ version: VERSION, session: bus.session }) }));\n      transport.replay();\n    } catch (err) {}\n  });\n  g.document.addEventListener('sqh:cost', function () {\n    try {\n      g.document.dispatchEvent(new g.CustomEvent('sqh:parse-cost', { detail: JSON.stringify(bus.parseTimes) }));\n    } catch (err) {}\n  });\n})(typeof globalThis !== 'undefined' ? globalThis : this);\n";
 // Stream Quality HUD: current picture, codec-adjusted data grades and plain-language sound.
-// Supported playback issues appear in the overview; service/device possibilities and diagnostic
-// measurements live under Technical details. It only reads; it never touches the sound.
+// The corner pill names the size, the video codec and the listed bitrate. Supported playback issues stay in the overview;
+// service/device possibilities and diagnostic measurements live under Technical details. It never
+// touches the sound. A confirmed film card
+// (size, codec, listed bitrate, colour, timing) can be saved on this Mac so another browser can
+// compare the same film. Playlist URLs are not stored, and a service-wide cap is not a card.
 // (Control+Option+Shift combinations never reach web pages on Andy's Mac, so the key avoids Option.)
 //
 // How it knows "the best version": the page's player downloads a quality list (a DASH .mpd or an
@@ -666,7 +677,14 @@
   }
 
   // Orion is WebKit, but its extensions see Chrome's user agent (pages see Safari's). WebKit-only APIs give it away.
-  const isWebKit = () => ('ApplePaySession' in window || 'GestureEvent' in window) && 'videoTracks' in HTMLMediaElement.prototype;
+  // GestureEvent alone counts: Playwright's userscript world stubs it and omits videoTracks.
+  // Chrome has neither Apple marker. Orion has ApplePaySession and videoTracks.
+  const isWebKit = () => {
+    const gesture = 'GestureEvent' in window;
+    const pay = 'ApplePaySession' in window;
+    if (!gesture && !pay) return false;
+    return gesture || 'videoTracks' in HTMLMediaElement.prototype;
+  };
   function browserName() {
     const ua = navigator.userAgent;
     if (/Edg\//.test(ua)) return 'edge';
@@ -701,9 +719,12 @@
   }
 
   // The service's own row: its published cap for this browser and its best anywhere (plain facts, no judgement).
-  function serviceRow(svc, b, cap) {
+  // `above` names what this film showed beyond that cap; then the cap is shown as the service's own word.
+  function serviceRow(svc, b, cap, above) {
     const where = BROWSER_LABEL[b] || 'this browser';
-    return [svc.name, cap ? 'up to ' + cap + ' in ' + where : 'limit for ' + (BROWSER_LABEL[b] || 'this browser') + ': unknown', '', svc.best ? 'best anywhere: ' + svc.best : 'best anywhere: unknown'];
+    const best = svc.best ? 'best anywhere: ' + svc.best : 'best anywhere: unknown';
+    if (cap && above) return [svc.name, 'says up to ' + cap + ' in ' + where, 'note', above + ', above that · ' + best];
+    return [svc.name, cap ? 'up to ' + cap + ' in ' + where : 'limit for ' + where + ': unknown', '', best];
   }
 
   // ---------- screen refresh and smoothness (only while the host is connected) ----------
@@ -866,6 +887,222 @@
     };
     const ref = STREAM_REF[size];
     return { bpp: hi.bpp, disc: span(GRADES, (x) => x / DISC_BPP), stream: ref ? span(SGRADES, (x) => x / ref) : null };
+  }
+
+  // ---------- cards from browsers that actually played this film ----------
+  // One card per browser, and only after this video's own list is confirmed. The card is the best
+  // playable offer on that list, not the low rung a player starts on and not a published cap.
+  // localStorage keeps this browser's card when the loopback box is down, which is not enough to
+  // recommend a switch. The box (127.0.0.1:9791) is how the other browser's card arrives.
+  const CARD_KEY = 'sqhud.cards.v1';
+  const CARD_TTL = 7 * 24 * 60 * 60 * 1000;
+  const CARD_BOX = 'http://127.0.0.1:9791';
+  const CARD_BROWSERS = ['chrome', 'safari', 'firefox', 'edge', 'orion'];
+
+  function filmId() {
+    let host = location.hostname;
+    try {
+      const a = location.ancestorOrigins;
+      if (a && a.length) host = new URL(a[a.length - 1]).hostname;
+    } catch (e) {}
+    host = String(host || '').replace(/^www\./, '').toLowerCase();
+    let path = location.pathname || '/';
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+    if (path.length > 180) path = path.slice(0, 180);
+    return host + path;
+  }
+
+  function filmPage() {
+    let href = location.href;
+    try { href = window.top.location.href; } catch (e) {}
+    try {
+      const u = new URL(href);
+      if (!/^https?:$/.test(u.protocol)) return '';
+      let path = u.pathname || '/';
+      if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+      if (path.length > 180) path = path.slice(0, 180);
+      return u.origin + path;
+    } catch (e) { return ''; }
+  }
+
+  function cardOk(c) {
+    if (!c || c.v !== 1) return false;
+    if (typeof c.id !== 'string' || c.id.length > 220 || !/^[a-z0-9.-]+\/[\w./~:@%+-]*$/.test(c.id) || c.id.includes('..')) return false;
+    const slash = c.id.indexOf('/');
+    if (c.id.slice(0, slash) !== c.id.slice(0, slash).toLowerCase()) return false;
+    if (!CARD_BROWSERS.includes(c.browser)) return false;
+    if (typeof c.at !== 'number' || !(c.at > 0) || Date.now() - c.at > CARD_TTL || c.at > Date.now() + 60000) return false;
+    const t = c.top;
+    if (!t || !(t.w > 0) || !(t.h > 0) || t.w > 8000 || t.h > 8000) return false;
+    if (typeof t.tag !== 'string' || t.tag.length > 12 || typeof t.codec !== 'string' || t.codec.length > 40) return false;
+    if (typeof t.bps !== 'number' || !(t.bps >= 0) || t.bps > 1e9 || typeof t.fps !== 'number' || !(t.fps >= 0) || t.fps > 240) return false;
+    if (typeof t.hdr !== 'boolean' || typeof t.includesSound !== 'boolean') return false;
+    if (c.timing !== 'even' && c.timing !== 'uneven' && c.timing !== 'unknown') return false;
+    if (typeof c.altered !== 'boolean' || typeof c.screenHdr !== 'boolean') return false;
+    if (c.page != null && c.page !== '' && (typeof c.page !== 'string' || c.page.length > 300 || !/^https?:\/\/[^\s?#]+$/.test(c.page))) return false;
+    if (/[.]m3u8|[.]mpd|cookie/i.test(c.id + ' ' + (c.page || '') + ' ' + t.codec + ' ' + t.tag)) return false;
+    return true;
+  }
+
+  function readCards() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CARD_KEY) || '[]');
+      return Array.isArray(raw) ? raw.filter(cardOk).slice(-40) : [];
+    } catch (e) { return []; }
+  }
+
+  function writeCards(cards) {
+    try { localStorage.setItem(CARD_KEY, JSON.stringify(cards.filter(cardOk).slice(-40))); } catch (e) {}
+  }
+
+  function rememberCard(card) {
+    if (!cardOk(card)) return;
+    const rest = readCards().filter((c) => !(c.id === card.id && c.browser === card.browser));
+    rest.push(card);
+    writeCards(rest);
+  }
+
+  // Sound comes off an HLS total only when every audio track lists a bitrate. A 5.1 label is not
+  // kept: on a Mac the browser folds surround, and this panel cannot see the speakers.
+  function topOffer(ladder, vars) {
+    const group = topOfVars(vars);
+    const top = group[0];
+    if (!top || !(top.w > 0) || !(top.h > 0)) return null;
+    const bps = Math.max(0, ...group.map((v) => v.bps || 0));
+    if (!(bps > 0)) return null;
+    let videoBps = bps, includesSound = false;
+    if (ladder.kind === 'HLS' && ladder.audio.length && ladder.audio.every((a) => a.bps > 0)) {
+      const aBps = Math.max(...ladder.audio.map((a) => a.bps));
+      if (aBps > 0 && aBps < bps / 2) videoBps = bps - aBps;
+    } else if (ladder.kind === 'HLS') includesSound = true;
+    const names = uniq(group.map((v) => codecName(v.codecs))).filter((c) => c && !/ or /.test(c));
+    const fpsVals = uniq(group.map((v) => v.fps)).filter((n) => n > 0);
+    const hdr = group.some((v) => v.range && /HDR|HLG|Dolby/.test(v.range) && canPlayVideo(v.codecs, v.mime) === true);
+    return {
+      w: top.w, h: top.h, tag: tag(top.w, top.h),
+      codec: names.length === 1 ? names[0] : '',
+      bps: videoBps, includesSound, hdr,
+      fps: fpsVals.length === 1 ? fpsVals[0] : 0,
+    };
+  }
+
+  function offerGrade(card) {
+    const t = card && card.top;
+    if (!t || !t.codec || !(t.fps > 0) || !(t.bps > 0)) return null;
+    return dataGrade(t.bps, t.w, t.h, t.fps, t.codec);
+  }
+
+  // '' means this step is too close to call. Order: size, HDR this screen can show, codec-adjusted
+  // bits outside a 15% band, even frame timing, then a picture the page does not filter.
+  // Audio never picks a winner.
+  function preferCard(a, b, screenHdr) {
+    const ra = rankOf(a.top.tag), rb = rankOf(b.top.tag);
+    if (ra && rb && ra !== rb) return ra > rb ? 'a' : 'b';
+    const aHdr = !!(a.top.hdr && screenHdr), bHdr = !!(b.top.hdr && screenHdr);
+    if (aHdr !== bHdr) return aHdr ? 'a' : 'b';
+    const ga = offerGrade(a), gb = offerGrade(b);
+    if (ga && gb && ga.adj > 0 && gb.adj > 0) {
+      if (Math.abs(ga.adj - gb.adj) / Math.max(ga.adj, gb.adj) > 0.15) return ga.adj > gb.adj ? 'a' : 'b';
+    }
+    const pace = (c) => (c.timing === 'even' ? 2 : c.timing === 'uneven' ? 0 : 1);
+    if (pace(a) !== pace(b)) return pace(a) > pace(b) ? 'a' : 'b';
+    if (!!a.altered !== !!b.altered) return a.altered ? 'b' : 'a';
+    return '';
+  }
+
+  function cardReason(win, lose) {
+    const other = BROWSER_LABEL[lose.browser] || 'the other browser';
+    if (rankOf(win.top.tag) > rankOf(lose.top.tag)) return win.top.tag + ', against ' + other + '’s ' + lose.top.tag;
+    if (win.top.hdr && !lose.top.hdr) return 'HDR, which this screen can show';
+    const gw = offerGrade(win), gl = offerGrade(lose);
+    if (gw && gl && gw.adj > gl.adj) return 'the heavier ' + win.top.tag + ' copy';
+    if (win.timing === 'even' && lose.timing !== 'even') return 'even frame timing';
+    if (!win.altered && lose.altered) return 'an unaltered picture';
+    return 'the stronger copy';
+  }
+
+  function browserHref(name, page) {
+    if (!page || !/^https?:\/\/[^\s?#]+$/.test(page)) return '';
+    if (name === 'chrome') return 'google-chrome://' + page;
+    if (name === 'edge') return 'microsoft-edge:' + page;
+    if (name === 'firefox') return 'firefox://open-url?url=' + encodeURIComponent(page);
+    return '';
+  }
+
+  function watchFor(mine, screenHdr) {
+    if (!cardOk(mine)) return null;
+    const others = readCards().filter((c) => c.id === mine.id && c.browser !== mine.browser);
+    if (!others.length) return null;
+    let best = others[0];
+    for (const c of others.slice(1)) if (preferCard(c, best, screenHdr) === 'a') best = c;
+    const side = preferCard(mine, best, screenHdr);
+    if (side === 'a') return { self: true, browser: mine.browser, reason: cardReason(mine, best), page: '', href: '' };
+    if (side === 'b') return { self: false, browser: best.browser, reason: cardReason(best, mine), page: best.page || '', href: browserHref(best.browser, best.page || '') };
+    return null;
+  }
+
+  let lastCardPost = 0, lastCardPull = 0, lastCardKey = '';
+
+  function gmRequest(opts) {
+    try {
+      if (typeof GM_xmlhttpRequest === 'function') return (GM_xmlhttpRequest(opts), true);
+      if (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function') return (GM.xmlHttpRequest(opts), true);
+    } catch (e) {}
+    return false;
+  }
+
+  function publishCard(card) {
+    if (!cardOk(card)) return;
+    rememberCard(card);
+    const key = JSON.stringify({ id: card.id, browser: card.browser, top: card.top, timing: card.timing, altered: card.altered, screenHdr: card.screenHdr, page: card.page });
+    const now = Date.now();
+    if (key === lastCardKey && now - lastCardPost < 30000) return;
+    lastCardKey = key;
+    lastCardPost = now;
+    const body = JSON.stringify(card);
+    if (gmRequest({ method: 'POST', url: CARD_BOX + '/cards', data: body, headers: { 'Content-Type': 'application/json' } })) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'sqhud-cards-put', card }, () => void chrome.runtime.lastError);
+      return;
+    } catch (e) {}
+    if (location.protocol === 'http:') fetch(CARD_BOX + '/cards', { method: 'POST', headers: { 'content-type': 'application/json' }, body }).catch(() => {});
+  }
+
+  function applyRemote(cards, id, browser) {
+    if (!Array.isArray(cards)) return false;
+    let all = readCards(), changed = false;
+    for (const c of cards) {
+      if (!cardOk(c) || c.id !== id || c.browser === browser) continue;
+      const prev = all.find((x) => x.id === c.id && x.browser === c.browser);
+      // A newer card already on this Mac wins. An older box copy must not erase it.
+      if (prev && prev.at >= c.at) continue;
+      all = all.filter((x) => !(x.id === c.id && x.browser === c.browser));
+      all.push(c);
+      changed = true;
+    }
+    if (changed) writeCards(all);
+    return changed;
+  }
+
+  function pullCards(id, browser) {
+    if (!id || Date.now() - lastCardPull < 4000) return;
+    lastCardPull = Date.now();
+    const url = CARD_BOX + '/cards?id=' + encodeURIComponent(id);
+    const show = (changed) => { if (changed) setTimeout(() => { if (host && host.isConnected) render(); }, 0); };
+    const take = (text) => {
+      let changed = false;
+      try { changed = applyRemote(JSON.parse(text).cards, id, browser); } catch (e) {}
+      show(changed);
+    };
+    if (gmRequest({ method: 'GET', url, onload: (res) => take(res && (res.responseText || res.response || '')) })) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'sqhud-cards-get', id }, (res) => {
+        void chrome.runtime.lastError;
+        if (res && res.ok) show(applyRemote(res.cards, id, browser));
+      });
+      return;
+    } catch (e) {}
+    if (location.protocol === 'http:') fetch(url).then((r) => r.text()).then(take).catch(() => {});
   }
 
   // What is drawn over the video or applied to it, read from the page's layout: effects (filter, opacity, blend) on the
@@ -1064,6 +1301,10 @@
     else pic = 'unknown';
     const sizeBest = ['top', 'topsize', 'topplayable', 'atcap'].includes(pic);
     const bestHere = topPlay ? tag(topPlay[0].w, topPlay[0].h) : cap === 'HD' ? '720p' : cap || playTag;
+    // The published cap is the service's help-page word; this film can beat it (Disney+ sends 1080p to Safari).
+    const capCeil = cap === 'HD' ? RANK['1080p'] : capRank;
+    const listTop = topPlay ? tag(topPlay[0].w, topPlay[0].h) : '';
+    const capAbove = !capCeil ? '' : rankOf(playTag) > capCeil ? 'this film plays ' + playTag : rankOf(listTop) > capCeil ? 'this film’s stream list goes to ' + listTop : '';
     // HDR: a version at this size the browser says it can play, while SDR plays on an HDR screen.
     const hdrHere = ladder ? ladder.variants.filter((v) => v.range && near(v, vw, vh)) : [];
     const hdrPlayable = hdrHere.filter((v) => canPlayVideo(v.codecs, v.mime) === true);
@@ -1111,7 +1352,7 @@
       const tops = uniq(ladders.map((L) => tag(topOf(L)[0].w, topOf(L)[0].h)));
       pictureRows.push(['Stream lists', ladders.length + ' (best in them: ' + tops.join(', ') + ')', 'note', { ambiguous: 'disagree on the best', nomatch: 'video’s stream list lacks its size', unconfirmed: 'none confirmed as video’s' }[found.state]]);
     }
-    if (svc) pictureRows.push(serviceRow(svc, b, cap));
+    if (svc) pictureRows.push(serviceRow(svc, b, cap, capAbove));
     let colJ;
     if (isHdr) colJ = screenHdr ? ['normal', 'HDR on an HDR screen'] : ['note', 'SDR-only screen shows it as SDR'];
     else if (!playingRange) colJ = ['note', B + ' doesn’t say'];
@@ -1150,15 +1391,29 @@
       pictureRows.push(['Bitrate', mbps(m.rate) + ', measured', ...judgeBitrate(m.rate, playTag, codec, true)]);
       (videoBps = m.rate), (gradeHow = 'measured; varies by scene');
     }
-    const hiG = dataGrade(videoBps, vw, vh, fps, codec);
+    const mv = measureView(video);
+    let hiG = dataGrade(videoBps, vw, vh, fps, codec);
     const fromList = /^listed/.test(gradeHow);
     const peakOnly = fromList && listed.some((v) => v.peak) && videoBps === Math.max(...listed.map((v) => v.bps));
     if (peakOnly) gradeHow = gradeHow.replace(/^listed/, 'listed peak');
-    const rangeKnown = fromList && lowBps < videoBps;
-    const loG = rangeKnown ? (lowBps > 0 ? dataGrade(lowBps, vw, vh, fps, codec) : { adj: 0 }) : null;
-    const grade = hiG ? grades(hiG, peakOnly ? null : loG, rangeKnown || peakOnly, tag(vw, vh)) : null;
+    let rangeKnown = fromList && lowBps < videoBps;
+    let loG = rangeKnown ? (lowBps > 0 ? dataGrade(lowBps, vw, vh, fps, codec) : { adj: 0 }) : null;
+    let gradeMeasured = false;
+    if (mv && mv.grade) {
+      const g2 = dataGrade(mv.grade.bps, mv.grade.w, mv.grade.h, mv.grade.fps, mv.grade.codec);
+      if (g2) {
+        hiG = g2;
+        videoBps = mv.grade.bps;
+        lowBps = videoBps;
+        rangeKnown = false;
+        loG = null;
+        gradeMeasured = true;
+        gradeHow = 'measured average at ' + tag(mv.grade.w, mv.grade.h) + ', ' + Math.max(1, Math.round(mv.grade.sec / 60)) + ' min';
+      }
+    }
+    const grade = hiG ? grades(hiG, gradeMeasured || peakOnly ? null : loG, gradeMeasured ? false : rangeKnown || peakOnly, tag(vw, vh)) : null;
     if (grade) {
-      const how = ' (' + gradeHow + (listedFps ? '' : ', rough frame rate') + ')';
+      const how = ' (' + gradeHow + (gradeMeasured || listedFps ? '' : ', rough frame rate') + ')';
       const sg = grade.stream, dg = grade.disc;
       if (sg) pictureRows.push(['Streaming grade', sg.letter + ' · ' + sg.word, /[DF]$/.test(sg.letter) ? 'note' : 'normal', sg.pct + ' of a high ' + playTag + ' streaming reference; codec-adjusted' + how + '. A rough data guide, not a picture-quality measurement.']);
       else pictureRows.push(['Streaming grade', 'reference unavailable', '', 'no high streaming reference for ' + playTag]);
@@ -1464,28 +1719,706 @@
       issue: visibleIssue ? { title, text: sub, steps: visibleIssue.steps } : null,
       overlay: ov.effects.length || ov.solid ? ov.effects.concat(ov.parts).join('; ') : '',
     };
+    let card = null;
+    if (ladder && found && found.state === 'ok' && topPlay && topPlay.length && b) {
+      const offer = topOffer(ladder, topPlay);
+      if (offer) {
+        const made = {
+          v: 1, id: filmId(), page: filmPage(), browser: b, at: Date.now(), screenHdr: !!screenHdr, top: offer,
+          timing: !ft ? 'unknown' : ft.unknown ? 'unknown' : ft.even ? 'even' : 'uneven',
+          altered: !!(ov.effects && ov.effects.length),
+        };
+        if (cardOk(made)) card = made;
+      }
+    }
+    overview.watch = watchFor(card, !!screenHdr);
     // Broader capability statements remain accessible, one disclosure deep.
-    const contextRows = rows.filter((row) => row.part !== 'Playback' && row.cmp && !/unknown/.test(row.cmp)).map((row) => [row.part + ' limits', row.cmp, '', 'Published service capability; not confirmed for this title.']);
+    const contextRows = rows.filter((row) => row.part !== 'Playback' && row.cmp && !/unknown/.test(row.cmp)).map((row) => [row.part + ' limits', row.cmp, '', row.part === 'Picture' && capAbove ? 'Published service capability; ' + capAbove + ', above it.' : 'Published service capability; not confirmed for this title.']);
     if (svc && svc.name === 'Netflix') contextRows.push(['Spatial audio', 'Netflix’s 2-channel spatial mix', '', 'Premium, selected titles; not a macOS setting and not confirmed for this playback.']);
     if (limited) contextRows.push(['Page timing', pbNow, '', 'Page callbacks alone do not establish a video playback problem.']);
+
+    function measuredRows() {
+      if (!mv || !mv.show) return null;
+      // Nothing can be counted: the reason alone, without the method notes.
+      if (mv.blocked) return [['Source', mv.blocked, '', '']];
+      const handed = b === 'safari' ? 'Safari' : (BROWSER_LABEL[b] || 'Chrome');
+      const source = mv.pieces + ' video pieces · ' + S + ' handed ' + handed;
+      const seconds = mv.ready
+        ? ('min ' + (mv.min / 1e6).toFixed(1) + ' · p25 ' + (mv.p25 / 1e6).toFixed(1) + ' · median ' + (mv.median / 1e6).toFixed(1) + ' · p75 ' + (mv.p75 / 1e6).toFixed(1) + ' · max ' + mv.highText + ' Mbps')
+        : 'waiting for 5 s of playback';
+      const secWhy = 'Linear interpolation. A complete second has at least 0.98 s.' + (mv.ready && mv.coverage > 0 && mv.coverage < 0.99 ? ' Coverage ' + Math.round(mv.coverage * 100) + '% of watched time.' : '');
+      const frames = mv.ready
+        ? (mv.frames + ' frames' + (mv.fps ? ' · ' + (Math.round(mv.fps * 100) / 100) + ' fps' : '') + (mv.largest ? ' · largest ' + Math.max(1, Math.round(mv.largest / 1024)) + ' KB' : '') + ' · ' + (mv.keys ? mv.keys + ' keyframes' : 'keyframes unknown'))
+        : 'waiting for 5 s of playback';
+      return [
+        ['Source', source, '', ''],
+        ['Counts', 'encoded video only; sound, container and network overhead excluded', '', ''],
+        ['Seconds', seconds, '', secWhy, 'room'],
+        ['Frames', frames, '', ''],
+        ['Picture detail', 'Picture detail can\u2019t be measured here: these services protect the decoded frames.', '', ''],
+      ];
+    }
+    const mRows = measuredRows();
+
+    function pillLabel() {
+      const bits = [isHdr && singleRange ? playTag + ' ' + singleRange : playTag];
+      if (codec && !/ or /.test(codec)) bits.push(codec);
+      if (mv && mv.ready && mv.avgText) {
+        bits.push(mv.avgText + ' avg');
+        return bits.join(' · ');
+      }
+      const rate = listed.length && rangeOf(listed) ? rangeOf(listed) : (cfg && cfg.bitrate ? mbps(cfg.bitrate) : (m.rate ? mbps(m.rate) : ''));
+      if (rate) bits.push(rate + (/incl\. sound/.test(gradeHow) ? ' incl. sound' : ''));
+      return bits.join(' · ');
+    }
 
     return {
       title: visibleIssue ? title : pv,
       sub: visibleIssue ? sub : '',
-      pill: visibleIssue ? title : pv,
+      // Size, codec and bitrate. SDR is the usual colour here, and BlackHole folds sound to stereo,
+      // so those words stay in the panel. HDR stays on the pill when this picture is actually HDR.
+      pill: pillLabel(),
       dot: visibleIssue ? visibleIssue.mark : 'top',
       overview,
+      card,
+      measure: mv,
       kicker: S + ' · ' + B,
       rows,
       quiet,
       sections: [
         { name: 'Picture', rows: pictureRows },
+        ...(mRows ? [{ name: 'Measured', rows: mRows }] : []),
         { name: 'Sound', rows: soundRows },
         { name: 'Playback', rows: playbackRows },
         { name: 'Service context', rows: contextRows },
       ],
     };
   }
+
+  // ---------- measured video data (1.13.0) ----------
+  // Safari installs the reader only on services Andy checked, about 9:05 PM on 25 Oct 2026.
+  const SAFARI_READER_HOSTS = ['disneyplus.com', 'hulu.com', 'max.com', 'hbomax.com', 'netflix.com', 'primevideo.com', 'paramountplus.com', 'peacocktv.com', 'amazon.com', 'amazon.co.uk', 'amazon.de', 'amazon.ca', 'amazon.co.jp', 'amazon.fr', 'amazon.it', 'amazon.es', 'amazon.com.au'];
+  const READER_BLOCK_KEY = 'sqh.reader.blocked';
+  const MEASURE_REASONS = {
+    sequence: 'The player places pieces in sequence mode, which the HUD doesn\u2019t measure.',
+    joined: 'The player started before the HUD\u2019s reader; reload the page to measure it.',
+    unparsed: 'Its pieces aren\u2019t MP4, so frame sizes can\u2019t be read.',
+    timing: 'Its timing layout isn\u2019t one the HUD reads.',
+    keyframes: 'Its pieces don\u2019t mark keyframes, so the HUD can\u2019t follow them.',
+    safety: 'Measurement stopped at its safety limit.',
+    killed: 'Turned off to protect playback.',
+    several: 'Several video tracks; can\u2019t tell which one shows.',
+    worker: 'The player feeds video from a background worker the HUD can\u2019t read.',
+    blocked: 'This page blocked the HUD\u2019s reader, so it won\u2019t try here again.',
+    safari: 'In Safari the HUD reads pieces only on services checked for it.',
+    noreader: 'The HUD\u2019s reader isn\u2019t running in this browser.',
+    hls: 'Safari plays this stream itself, so pages can\u2019t see its pieces.',
+    progressive: 'This playback doesn\u2019t use Media Source, so the HUD can\u2019t see its pieces.',
+  };
+  const measured = {
+    highest: new Map(), pending: [], inits: new Map(), union: [], seconds: new Map(), configs: new Map(),
+    committedBytes: 0, committedDur: 0, frames: 0, keys: 0, largest: 0, minFrame: 0, maxFrame: 0,
+    pieces: 0, reason: '', moov: false, playedMs: 0, owner: null, ledgerOwner: null, reader: false, video: null, prev: null,
+    accountTimes: [], renderTimes: [],
+  };
+  let readerGate = null;
+  let readerGatePromise = null;
+  let readerInjectQueued = false;
+  let measureTimer = null;
+  let measurePinged = false;
+  function readerHostOk() {
+    const host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+    const on = (h) => host === h || host.endsWith('.' + h);
+    if (!SAFARI_READER_HOSTS.some(on)) return false;
+    if (/(^|\.)amazon\./.test(host) && !on('primevideo.com') && !/^\/gp\/video\//.test(location.pathname || '')) return false;
+    return true;
+  }
+  function readerGmReady() {
+    return typeof GM !== 'undefined' && !!GM && typeof GM.getValue === 'function' && typeof GM.setValue === 'function';
+  }
+  function readerPrime() {
+    if (readerGatePromise) return readerGatePromise;
+    if (readerGate === false) return Promise.resolve(false);
+    if (!readerGmReady()) { readerGate = false; return Promise.resolve(false); }
+    readerGatePromise = Promise.resolve()
+      .then(() => GM.getValue(READER_BLOCK_KEY))
+      .then((v) => { readerGate = v == null ? '' : String(v); return readerGate; })
+      .catch(() => { readerGate = false; return false; });
+    return readerGatePromise;
+  }
+  function readerHostBlocked() {
+    if (typeof readerGate !== 'string' || !readerGate) return false;
+    const name = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+    return readerGate.split(',').includes(name);
+  }
+  function readerRememberBlock() {
+    const name = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+    const cur = typeof readerGate === 'string' ? readerGate : '';
+    const list = cur.split(',').filter(Boolean);
+    if (!list.includes(name)) list.push(name);
+    readerGate = list.join(',');
+    try { globalThis.__sqhReaderBlocked = true; } catch (e) {}
+    try {
+      if (readerGmReady()) {
+        const pending = GM.setValue(READER_BLOCK_KEY, readerGate);
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      }
+    } catch (e2) {}
+    // The violation can arrive after the first paint. Refresh once the host is remembered.
+    if (!measured.reader) {
+      try { setTimeout(() => { if (host && host.isConnected) render(); }, 0); } catch (e3) {}
+    }
+  }
+  function readerInject(stored) {
+    const src = globalThis.SQH_PAGE_HOOK_SOURCE;
+    if (!src || stored === false || globalThis.__sqhInjected || !isWebKit() || !readerHostOk()) return;
+    const name = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+    if (String(stored || '').split(',').filter(Boolean).includes(name)) return;
+    const parent = document.documentElement || document.head;
+    if (!parent) return;
+    globalThis.__sqhInjected = true;
+    let watchInline = true;
+    document.addEventListener('securitypolicyviolation', (e) => {
+      const sample = (e.sample || '') + ' ' + (e.blockedURI || '') + ' ' + (e.sourceFile || '');
+      const directive = (e.effectiveDirective || e.violatedDirective || '');
+      const named = sample.indexOf('sqh-reader') !== -1 || (e.target && e.target.id === 'sqh-reader');
+      // WebKit reports the inline tag as blockedURI "inline" and script-src-elem, without the script id.
+      // Count that only while our tag is going in, so a later script on the page does not count.
+      if (!named && !(watchInline && /script-src/.test(directive))) return;
+      readerRememberBlock();
+    });
+    const script = document.createElement('script');
+    script.id = 'sqh-reader';
+    script.textContent = src;
+    parent.appendChild(script);
+    script.remove();
+    setTimeout(() => { watchInline = false; }, 0);
+  }
+  function installPageHook() {
+    const src = globalThis.SQH_PAGE_HOOK_SOURCE;
+    if (!src || !isWebKit() || !readerHostOk() || globalThis.__sqhInjected) return;
+    if (readerGate === false) return;
+    if (typeof readerGate === 'string') { readerInject(readerGate); return; }
+    if (readerInjectQueued) return;
+    readerInjectQueued = true;
+    readerPrime().then((stored) => { readerInjectQueued = false; readerInject(stored); });
+  }
+  function unionLen(u) { let n = 0; for (const p of u) n += p[1] - p[0]; return n; }
+  function subtractUnseen(u, a, b) {
+    let parts = [[a, b]];
+    for (const span of u) {
+      const next = [];
+      for (const p of parts) {
+        if (span[1] <= p[0] || span[0] >= p[1]) next.push(p);
+        else {
+          if (span[0] > p[0]) next.push([p[0], span[0]]);
+          if (span[1] < p[1]) next.push([span[1], p[1]]);
+        }
+      }
+      parts = next;
+    }
+    return parts.filter((p) => p[1] > p[0]);
+  }
+  function addUnion(u, a, b) {
+    u.push([a, b]);
+    u.sort((x, y) => x[0] - y[0]);
+    const out = [];
+    for (const cur of u) {
+      if (!out.length || cur[0] > out[out.length - 1][1]) out.push([cur[0], cur[1]]);
+      else out[out.length - 1][1] = Math.max(out[out.length - 1][1], cur[1]);
+    }
+    u.length = 0;
+    for (const p of out) u.push(p);
+  }
+  function measureStop(code) {
+    if (measured.reason === 'safety' || measured.reason === 'killed') return;
+    measured.reason = code;
+  }
+  function videOf(ms) {
+    let n = 0;
+    measured.inits.forEach((v) => { if (v.ms === ms) n += v.vide || 0; });
+    return n;
+  }
+  function removePending(ms, start, end) {
+    const list = measured.pending.filter((s) => s.ms === ms).sort((a, b) => a.t0 - b.t0);
+    let resume = Infinity;
+    for (const s of list) if (s.t0 >= end && s.key === 1) { resume = s.t0; break; }
+    measured.pending = measured.pending.filter((s) => {
+      if (s.ms !== ms) return true;
+      const overlaps = s.t1 > start && s.t0 < end;
+      // Samples that start inside the range, through the next keyframe, depend on the one that was replaced.
+      const dependent = s.t0 >= start && s.t0 < resume;
+      return !(overlaps || dependent);
+    });
+  }
+  function applyPiece(rec) {
+    if (!rec || measured.reason === 'safety' || measured.reason === 'killed') return;
+    const session = rec.session || '';
+    if (typeof rec.seq === 'number') {
+      const hi = measured.highest.has(session) ? measured.highest.get(session) : null;
+      if (hi == null) measured.highest.set(session, rec.seq);
+      else if (rec.seq <= hi) return;
+      else if (rec.seq > hi + 1) { measureStop('safety'); return; }
+      else measured.highest.set(session, rec.seq);
+    }
+    // A fragment can arrive before the owner flips. Keep it so the flip can adopt it.
+    // Status for another source must not blank the one on screen. Its bye still drops that source.
+    if (measured.owner && measured.owner !== 'worker' && measured.owner !== 'none' && rec.ms && rec.ms !== measured.owner) {
+      if (rec.t === 'bye') {
+        measured.pending = measured.pending.filter((s) => s.ms !== rec.ms);
+        measured.inits.forEach((v, k) => { if (v.ms === rec.ms) measured.inits.delete(k); });
+        return;
+      }
+      if (rec.t === 'st') return;
+    }
+    if (rec.t === 'st') {
+      if (rec.why === 'joined-clear') { if (measured.reason === 'joined') measured.reason = ''; measured.moov = true; return; }
+      if (rec.why === 'safety' || rec.why === 'killed') measureStop(rec.why);
+      else if (!measured.reason && MEASURE_REASONS[rec.why]) measured.reason = rec.why;
+      return;
+    }
+    if (rec.t === 'init') {
+      measured.moov = true;
+      if (measured.reason === 'joined') measured.reason = '';
+      measured.inits.set(rec.sb || rec.ms, { ms: rec.ms, vide: rec.vide || 0 });
+      if (videOf(rec.ms) > 1 && !measured.reason) measured.reason = 'several';
+      return;
+    }
+    if (rec.t === 'bye') {
+      measured.pending = measured.pending.filter((s) => s.ms !== rec.ms);
+      measured.inits.forEach((v, k) => { if (v.ms === rec.ms) measured.inits.delete(k); });
+      return;
+    }
+    if (rec.t === 'rm') { removePending(rec.ms, +rec.start, +rec.end); return; }
+    if (rec.t !== 'f' || !rec.samples) return;
+    if (['several', 'keyframes', 'timing', 'sequence', 'unparsed'].includes(measured.reason)) return;
+    const ts = rec.timescale || 1;
+    const samples = [];
+    for (const s of rec.samples) {
+      const t0 = s[0] / ts + (rec.offset || 0);
+      const t1 = t0 + s[1] / ts;
+      if (!(t1 > t0)) continue;
+      if (s[3] == null) { measured.reason = measured.reason || 'keyframes'; return; }
+      samples.push({ t0, t1, bytes: s[2], key: s[3], ms: rec.ms, codec: codecName(rec.cfg && rec.cfg.codec) });
+    }
+    if (!samples.length) return;
+    if (measured.pending.length + samples.length > 200000) { measureStop('safety'); return; }
+    let start = samples[0].t0, end = samples[0].t1;
+    for (const s of samples) { if (s.t0 < start) start = s.t0; if (s.t1 > end) end = s.t1; }
+    removePending(rec.ms, start, end);
+    for (const s of samples) measured.pending.push(s);
+    measured.pieces++;
+  }
+  function addSecond(sec, bytes, dur, w, h, codec) {
+    if (measured.reason === 'safety') return;
+    let row = measured.seconds.get(sec);
+    if (!row) {
+      if (measured.seconds.size >= 6 * 3600) { measureStop('safety'); return; }
+      row = { bytes: 0, dur: 0, sizes: new Map() };
+      measured.seconds.set(sec, row);
+    }
+    row.bytes += bytes;
+    row.dur += dur;
+    if (!(w > 0 && h > 0)) return;
+    const key = w + 'x' + h + '|' + (codec || '');
+    const cur = row.sizes.get(key) || { dur: 0, w, h, codec: codec || '' };
+    cur.dur += dur;
+    row.sizes.set(key, cur);
+    let agg = measured.configs.get(key);
+    if (!agg) {
+      agg = { bytes: 0, dur: 0, w, h, codec: codec || '', frames: 0, union: [], minFrame: 0, maxFrame: 0 };
+      measured.configs.set(key, agg);
+    }
+    agg.bytes += bytes;
+    agg.dur += dur;
+  }
+  function playingCodec(video) {
+    try { return codecName((trackConfig(video) || {}).codec); } catch (e) { return ''; }
+  }
+  function adoptOwner(next) {
+    if (!next) return;
+    if (next === 'worker' || next === 'none') { measured.owner = next; return; }
+    if (measured.ledgerOwner == null) { measured.owner = next; measured.ledgerOwner = next; return; }
+    if (measured.ledgerOwner === next) { measured.owner = next; return; }
+    const keep = measured.pending.filter((s) => s.ms === next);
+    const keptInits = new Map();
+    measured.inits.forEach((v, k) => { if (v.ms === next) keptInits.set(k, v); });
+    const highest = measured.highest;
+    const reader = measured.reader;
+    const video = measured.video;
+    const moov = measured.moov;
+    resetLedger();
+    measured.pending = keep;
+    measured.inits = keptInits;
+    measured.highest = highest;
+    measured.reader = reader;
+    measured.video = video;
+    measured.moov = moov;
+    measured.owner = next;
+    measured.ledgerOwner = next;
+  }
+  function commitRange(video, prev, now) {
+    if (!(now > prev) || ['safety', 'killed', 'several', 'sequence', 'unparsed', 'timing', 'keyframes'].includes(measured.reason)) return;
+    const owner = measured.owner;
+    if (!owner || owner === 'none' || owner === 'worker') return;
+    adoptOwner(owner);
+    if (['safety', 'killed', 'several', 'sequence', 'unparsed', 'timing', 'keyframes'].includes(measured.reason)) return;
+    if (videOf(owner) > 1) { measured.reason = 'several'; return; }
+    const unseen = subtractUnseen(measured.union, prev, now);
+    if (!unseen.length) return;
+    addUnion(measured.union, prev, now);
+    if (unionLen(measured.union) > 6 * 3600) { measureStop('safety'); return; }
+    const w = video.videoWidth || 0, h = video.videoHeight || 0;
+    let playCodec = playingCodec(video);
+    if (!playCodec) {
+      for (const s of measured.pending) if (s.ms === owner && s.codec) { playCodec = s.codec; break; }
+    }
+    if (w > 0 && h > 0) {
+      const playKey = w + 'x' + h + '|' + (playCodec || '');
+      let play = measured.configs.get(playKey);
+      if (!play) {
+        play = { bytes: 0, dur: 0, w, h, codec: playCodec || '', frames: 0, union: [], minFrame: 0, maxFrame: 0 };
+        measured.configs.set(playKey, play);
+      }
+      if (!play.union) play.union = [];
+      for (const part of unseen) addUnion(play.union, part[0], part[1]);
+    }
+    for (const part of unseen) {
+      for (const s of measured.pending) {
+        if (s.ms !== owner || !(s.t1 > s.t0)) continue;
+        const lo = Math.max(s.t0, part[0]), hi = Math.min(s.t1, part[1]);
+        if (!(hi > lo)) continue;
+        const dur = hi - lo;
+        const bytes = s.bytes * (dur / (s.t1 - s.t0));
+        let x = lo;
+        while (x < hi - 1e-9) {
+          const edge = Math.min(hi, Math.floor(x) + 1);
+          addSecond(Math.floor(x), bytes * ((edge - x) / dur), edge - x, w, h, s.codec);
+          x = edge;
+        }
+        measured.committedDur += dur;
+        measured.committedBytes += bytes;
+        if (!s.counted && s.t0 >= part[0] && s.t0 < part[1]) {
+          s.counted = true;
+          measured.frames++;
+          if (s.key === 1) measured.keys++;
+          if (s.bytes > measured.largest) measured.largest = s.bytes;
+          const ds = s.t1 - s.t0;
+          if (!measured.minFrame || ds < measured.minFrame) measured.minFrame = ds;
+          if (ds > measured.maxFrame) measured.maxFrame = ds;
+          const agg = measured.configs.get(w + 'x' + h + '|' + (s.codec || ''));
+          if (agg) {
+            agg.frames++;
+            if (!agg.minFrame || ds < agg.minFrame) agg.minFrame = ds;
+            if (ds > agg.maxFrame) agg.maxFrame = ds;
+          }
+        }
+      }
+    }
+  }
+  function resetLedger() {
+    measured.pending = []; measured.union = []; measured.seconds = new Map(); measured.configs = new Map();
+    measured.committedBytes = 0; measured.committedDur = 0; measured.frames = 0; measured.keys = 0;
+    measured.largest = 0; measured.minFrame = 0; measured.maxFrame = 0; measured.pieces = 0;
+    measured.playedMs = 0; measured.highest = new Map(); measured.inits = new Map(); measured.prev = null; measured.reason = '';
+    measured.ledgerOwner = null;
+  }
+  function askOwner(video) {
+    let owner = null;
+    const on = (e) => { owner = String(e.detail); };
+    video.addEventListener('sqh:owner', on);
+    try { video.dispatchEvent(new CustomEvent('sqh:which')); } catch (e) {}
+    video.removeEventListener('sqh:owner', on);
+    return owner;
+  }
+  function pingReader() {
+    let pong = null;
+    const on = (e) => { try { pong = JSON.parse(e.detail); } catch (err) {} };
+    document.addEventListener('sqh:pong', on);
+    try { document.dispatchEvent(new CustomEvent('sqh:ping')); } catch (e) {}
+    document.removeEventListener('sqh:pong', on);
+    if (pong && pong.version) measured.reader = true;
+    return pong;
+  }
+  function ensurePing() {
+    // Install before the first paint. A tick-only install left the panel saying the reader was missing.
+    try { installPageHook(); } catch (e) {}
+    if (measured.reader) return;
+    try { pingReader(); } catch (e) {}
+    if (measured.reader) measurePinged = true;
+  }
+  function measureTick() {
+    const t0 = performance.now();
+    try {
+      const video = mainVideo();
+      if (!video) { measured.prev = null; return; }
+      try { installPageHook(); } catch (e) {}
+      ensurePing();
+      let switched = false;
+      if (video !== measured.video) {
+        // The first video keeps pieces that arrived before the tick. A later video starts clean.
+        if (measured.video) {
+          resetLedger();
+          measured.moov = false;
+          switched = true;
+        }
+        measured.video = video;
+        measured.owner = null;
+      }
+      const owner = askOwner(video);
+      let ownerChanged = false;
+      if (owner != null) {
+        const before = measured.owner;
+        adoptOwner(owner);
+        if (before && before !== owner && owner !== 'worker' && owner !== 'none') ownerChanged = true;
+      }
+      if (switched || ownerChanged) {
+        try { document.dispatchEvent(new CustomEvent('sqh:ping')); } catch (e) {}
+        // One paint so a new video's reason is not stuck behind the one-second timer.
+        // Do not render on every tick: that paints frame-timing judgements early and hides the startup picture note.
+        if (host && host.isConnected) render();
+      }
+      const nowT = video.currentTime || 0;
+      const wall = performance.now();
+      const rate = video.playbackRate || 1;
+      if (!measured.moov && !video.paused && measured.prev && !measured.prev.seeking) {
+        measured.playedMs += Math.max(0, wall - measured.prev.wall);
+        if (measured.playedMs >= 60000 && !measured.reason) measured.reason = 'joined';
+      }
+      if (video.paused || video.seeking || !measured.prev || measured.prev.seeking) {
+        measured.prev = { t: nowT, wall, seeking: !!video.seeking };
+        return;
+      }
+      const jump = nowT - measured.prev.t;
+      const elapsed = (wall - measured.prev.wall) / 1000;
+      if (!(jump >= 0) || jump > elapsed * Math.abs(rate) + 0.5) {
+        measured.prev = { t: nowT, wall, seeking: false };
+        return;
+      }
+      if (jump > 0) commitRange(video, measured.prev.t, nowT);
+      measured.prev = { t: nowT, wall, seeking: false };
+      const cutoff = nowT - 120;
+      measured.pending = measured.pending.filter((s) => s.t1 > cutoff);
+    } finally {
+      measured.accountTimes.push(performance.now() - t0);
+      if (measured.accountTimes.length > 5000) measured.accountTimes.shift();
+    }
+  }
+  function p95of(xs) {
+    if (!xs || !xs.length) return null;
+    const s = xs.slice().sort((a, b) => a - b);
+    const i = 0.95 * (s.length - 1);
+    const lo = Math.floor(i), hi = Math.ceil(i);
+    return lo === hi ? s[lo] : s[lo] * (hi - i) + s[hi] * (i - lo);
+  }
+  function pctLinear(sorted, p) {
+    if (!sorted.length) return 0;
+    if (sorted.length === 1) return sorted[0];
+    const i = (sorted.length - 1) * p;
+    const lo = Math.floor(i), hi = Math.ceil(i);
+    return lo === hi ? sorted[lo] : sorted[lo] * (hi - i) + sorted[hi] * (i - lo);
+  }
+  function mbps1(bps) { return (bps / 1e6).toFixed(1) + ' Mbps'; }
+  function liveReason(video) {
+    if (measured.reason === 'safety') return MEASURE_REASONS.safety;
+    if (measured.reason === 'killed') return MEASURE_REASONS.killed;
+    if (isWebKit() && !readerHostOk()) return MEASURE_REASONS.safari;
+    if ((globalThis.__sqhReaderBlocked || readerHostBlocked()) && !measured.reader) return MEASURE_REASONS.blocked;
+    if (!measured.reader) return MEASURE_REASONS.noreader;
+    if (measured.owner === 'worker') return MEASURE_REASONS.worker;
+    if (measured.owner && videOf(measured.owner) > 1) return MEASURE_REASONS.several;
+    if (measured.reason && MEASURE_REASONS[measured.reason]) return MEASURE_REASONS[measured.reason];
+    if (video && isWebKit() && /\.m3u8(\?|#|$)/i.test(video.currentSrc || video.src || '')) return MEASURE_REASONS.hls;
+    if (measured.owner === 'none') return MEASURE_REASONS.progressive;
+    return '';
+  }
+  function measureView(video) {
+    ensurePing();
+    if (video && measured.owner == null) {
+      const owner = askOwner(video);
+      if (owner != null) measured.owner = owner;
+    }
+    const blocked = liveReason(video);
+    const span = unionLen(measured.union);
+    const coverage = span > 0 ? measured.committedDur / span : 0;
+    const rates = [];
+    measured.seconds.forEach((row) => { if (row.dur >= 0.98) rates.push((row.bytes * 8) / row.dur); });
+    rates.sort((a, b) => a - b);
+    const avg = measured.committedDur > 0 ? (measured.committedBytes * 8) / measured.committedDur : 0;
+    const playCfg = video ? measured.configs.get((video.videoWidth || 0) + 'x' + (video.videoHeight || 0) + '|' + playingCodec(video)) : null;
+    const frameSrc = playCfg && playCfg.minFrame > 0 ? playCfg : measured;
+    const uniform = frameSrc.minFrame > 0 && frameSrc.maxFrame <= frameSrc.minFrame * 1.01;
+    let fps = uniform ? 1 / frameSrc.minFrame : 0;
+    // 1/0.04 is 25.000000000000014. A rate that is an integer within a millionth is that integer.
+    if (fps && Math.abs(fps - Math.round(fps)) < 1e-6) fps = Math.round(fps);
+    const ready = !blocked && measured.committedDur >= 5 && coverage >= 0.9;
+    let grade = null;
+    const cfgCov = playCfg && playCfg.union && unionLen(playCfg.union) > 0 ? playCfg.dur / unionLen(playCfg.union) : 0;
+    if (video && !blocked && playCfg && cfgCov >= 0.9 && fps > 0 && playCfg.dur >= 120) {
+      grade = { bps: (playCfg.bytes * 8) / playCfg.dur, w: playCfg.w, h: playCfg.h, fps, codec: playCfg.codec, sec: playCfg.dur };
+    }
+    const sizes = new Map();
+    measured.configs.forEach((cfg) => {
+      const key = cfg.w + 'x' + cfg.h;
+      const cur = sizes.get(key) || { dur: 0, w: cfg.w, h: cfg.h };
+      cur.dur += cfg.dur;
+      sizes.set(key, cur);
+    });
+    let shares = '';
+    if (sizes.size > 1) {
+      const list = [...sizes.values()].sort((a, b) => b.dur - a.dur);
+      const total = list.reduce((n, s) => n + s.dur, 0) || 1;
+      let pcts = list.map((s) => Math.round((s.dur / total) * 100));
+      const drift = 100 - pcts.reduce((n, p) => n + p, 0);
+      pcts[0] += drift;
+      shares = list.map((s, i) => tag(s.w, s.h) + ' ' + pcts[i] + '%').join(' \u00b7 ') + ' of watched time';
+    }
+    const t0 = measured.union.length ? measured.union[0][0] : 0;
+    const t1 = measured.union.length ? measured.union[measured.union.length - 1][1] : 0;
+    const width = Math.max(0, t1 - t0);
+    const bars = [];
+    if (width > 0 && measured.seconds.size) {
+      const n = Math.min(60, Math.max(1, Math.ceil(width)));
+      const step = width / n;
+      let majority = '', majorityPx = -1, majorityDur = 0;
+      const pxOf = new Map();
+      measured.configs.forEach((cfg) => {
+        const key = cfg.w + 'x' + cfg.h;
+        const px = cfg.w * cfg.h;
+        const prev = pxOf.get(key) || 0;
+        pxOf.set(key, prev + cfg.dur);
+        if (prev + cfg.dur > majorityDur) { majorityDur = prev + cfg.dur; majority = key; majorityPx = px; }
+      });
+      for (let i = 0; i < n; i++) {
+        const a = t0 + i * step, b = a + step;
+        let bytes = 0, dur = 0;
+        const local = new Map();
+        measured.seconds.forEach((row, sec) => {
+          const lo = Math.max(a, sec), hi = Math.min(b, sec + 1);
+          if (!(hi > lo) || !(row.dur > 0)) return;
+          const frac = (hi - lo) / row.dur;
+          bytes += row.bytes * frac;
+          dur += hi - lo;
+          row.sizes.forEach((sz, key) => local.set(key, (local.get(key) || 0) + sz.dur * ((hi - lo) / row.dur)));
+        });
+        let best = '', bestDur = 0;
+        local.forEach((d, key) => { if (d > bestDur) { bestDur = d; best = key; } });
+        const px = best ? best.split('x').reduce((n, p) => n * parseInt(p, 10), 1) : 0;
+        bars.push({ mbps: dur > 0 ? (bytes * 8) / dur : 0, small: !!(best && majority && px < majorityPx) });
+      }
+    }
+    const min = rates.length ? rates[0] : 0;
+    const max = rates.length ? rates[rates.length - 1] : 0;
+    const view = {
+      show: true, ready, blocked, coverage, frames: measured.frames, keys: measured.keys, largest: measured.largest, fps,
+      avg, min, max, p25: pctLinear(rates, 0.25), median: pctLinear(rates, 0.5), p75: pctLinear(rates, 0.75),
+      fullSeconds: rates.length > 0,
+      avgText: mbps1(avg),
+      highText: rates.length ? (max / 1e6).toFixed(1) : '',
+      rangeText: rates.length ? (min / 1e6).toFixed(1) + '\u2013' + (max / 1e6).toFixed(1) + ' Mbps' : '',
+      shares, bars, t0, span: width, now: video ? video.currentTime || 0 : 0,
+      spanLabel: width >= 60 ? Math.round(width / 60) + ' min' : Math.max(0, Math.round(width)) + ' s',
+      need: measured.committedDur < 5 ? '5 s of playback needed' : 'coverage ' + Math.round(coverage * 100) + '% of watched time',
+      grade, pieces: measured.pieces,
+    };
+    view.svg = ready ? chartSvg(view) : '';
+    return view;
+  }
+  function chartSvg(view) {
+    const max = Math.max(view.max || 0, view.avg || 0, 1);
+    const yOf = (bps) => 4 + (1 - Math.max(0, bps) / max) * 36;
+    const x0 = 36, x1 = 228;
+    const bw = view.bars.length ? (x1 - x0) / view.bars.length : 0;
+    const rects = view.bars.map((b, i) => {
+      const y = yOf(b.mbps);
+      return '<rect x="' + (x0 + i * bw).toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + Math.max(0.3, bw - 0.3).toFixed(2) + '" height="' + Math.max(0, 40 - y).toFixed(2) + '" fill="' + (b.small ? '#b7c0c8' : '#8fb4d6') + '"></rect>';
+    }).join('');
+    let mark = '';
+    if (view.span > 0) {
+      const mx = x0 + Math.max(0, Math.min(1, (view.now - view.t0) / view.span)) * (x1 - x0);
+      mark = '<line x1="' + mx.toFixed(2) + '" x2="' + mx.toFixed(2) + '" y1="4" y2="40" stroke="#f4f5f7" stroke-width="1"></line>';
+    }
+    const boxX = 238;
+    const yA = yOf(view.p25), yB = yOf(view.p75);
+    const box = view.fullSeconds
+      ? '<line x1="' + boxX + '" x2="' + boxX + '" y1="' + yOf(view.max).toFixed(2) + '" y2="' + yOf(view.min).toFixed(2) + '" stroke="#d5dbe3"></line>'
+        + '<rect x="' + (boxX - 4) + '" y="' + Math.min(yA, yB).toFixed(2) + '" width="8" height="' + Math.max(1, Math.abs(yB - yA)).toFixed(2) + '" fill="#8fb4d6"></rect>'
+        + '<line x1="' + (boxX - 5) + '" x2="' + (boxX + 5) + '" y1="' + yOf(view.median).toFixed(2) + '" y2="' + yOf(view.median).toFixed(2) + '" stroke="#f4f5f7" stroke-width="1.5"></line>'
+        + '<line x1="' + (boxX - 3) + '" x2="' + (boxX + 3) + '" y1="' + yOf(view.avg).toFixed(2) + '" y2="' + yOf(view.avg).toFixed(2) + '" stroke="#efbb73" stroke-width="1.5"></line>'
+        + '<text x="250" y="22" fill="#bfc4cc" font-size="11" font-family="system-ui,sans-serif">median</text>'
+        + '<text x="250" y="36" fill="#bfc4cc" font-size="11" font-family="system-ui,sans-serif">avg</text>'
+      : '';
+    const aria = view.fullSeconds
+      ? 'Average ' + view.avgText + ', highest second ' + view.highText + ', range ' + String(view.rangeText).replace('\u2013', ' to ')
+      : 'Average ' + view.avgText;
+    return '<svg viewBox="0 0 300 56" role="img" aria-label="' + escHtml(aria) + '">'
+      + '<text x="2" y="12" fill="#a6adb8" font-size="11" font-family="system-ui,sans-serif">Mbps</text>'
+      + rects + mark + box
+      + '<text x="36" y="52" fill="#a6adb8" font-size="11" font-family="system-ui,sans-serif">0</text>'
+      + '<text x="188" y="52" fill="#a6adb8" font-size="11" font-family="system-ui,sans-serif">' + escHtml(view.spanLabel) + '</text></svg>';
+  }
+  function measureBench() {
+    const saved = {
+      pending: measured.pending, union: measured.union, seconds: measured.seconds, configs: measured.configs,
+      committedBytes: measured.committedBytes, committedDur: measured.committedDur, frames: measured.frames,
+      keys: measured.keys, largest: measured.largest, minFrame: measured.minFrame, maxFrame: measured.maxFrame,
+      pieces: measured.pieces, reason: measured.reason, moov: measured.moov, playedMs: measured.playedMs,
+      owner: measured.owner, ledgerOwner: measured.ledgerOwner, reader: measured.reader, video: measured.video,
+      prev: measured.prev, highest: measured.highest, inits: measured.inits,
+    };
+    const account = [];
+    const render = [];
+    try {
+      const fake = { videoWidth: 1920, videoHeight: 1080 };
+      for (let n = 0; n < 4; n++) {
+        resetLedger();
+        measured.owner = 'ms-bench';
+        measured.reader = true;
+        measured.moov = true;
+        const samples = new Array(10800);
+        for (let i = 0; i < 10800; i++) samples[i] = [i * 1000, 1000, 1000, 1];
+        const t = performance.now();
+        applyPiece({ t: 'f', ms: 'ms-bench', sb: 'bench', session: 'bench' + n, seq: 1, timescale: 1000, cfg: { codec: 'avc1' }, samples });
+        commitRange(fake, 0, 10800);
+        account.push(performance.now() - t);
+        const view = measureView(fake);
+        const tr = performance.now();
+        const holder = document.createElement('div');
+        const root = holder.attachShadow({ mode: 'open' });
+        root.innerHTML = view.svg || '<svg viewBox="0 0 300 56"></svg>';
+        document.documentElement.appendChild(holder);
+        holder.remove();
+        render.push(performance.now() - tr);
+      }
+    } finally {
+      measured.pending = saved.pending; measured.union = saved.union; measured.seconds = saved.seconds;
+      measured.configs = saved.configs; measured.committedBytes = saved.committedBytes; measured.committedDur = saved.committedDur;
+      measured.frames = saved.frames; measured.keys = saved.keys; measured.largest = saved.largest;
+      measured.minFrame = saved.minFrame; measured.maxFrame = saved.maxFrame; measured.pieces = saved.pieces;
+      measured.reason = saved.reason; measured.moov = saved.moov; measured.playedMs = saved.playedMs;
+      measured.owner = saved.owner; measured.ledgerOwner = saved.ledgerOwner; measured.reader = saved.reader;
+      measured.video = saved.video; measured.prev = saved.prev; measured.highest = saved.highest; measured.inits = saved.inits;
+    }
+    return { account: p95of(account), render: p95of(render), liveAccount: p95of(measured.accountTimes), liveRender: p95of(measured.renderTimes), parse: null };
+  }
+  function measurePublic() { return measureView(mainVideo()); }
+  document.addEventListener('sqh:pieces', (e) => {
+    let msg = null;
+    try { msg = JSON.parse(e.detail); } catch (err) { return; }
+    if (!msg || !msg.records) return;
+    for (const rec of msg.records) applyPiece(rec);
+  });
+  document.addEventListener('seeking', (e) => {
+    if (e.target && e.target.tagName === 'VIDEO') measured.prev = { t: e.target.currentTime || 0, wall: performance.now(), seeking: true };
+  }, true);
+  document.addEventListener('seeked', (e) => {
+    if (e.target && e.target.tagName === 'VIDEO') measured.prev = { t: e.target.currentTime || 0, wall: performance.now(), seeking: false };
+  }, true);
+  document.addEventListener('sqh:hud-cost', () => {
+    let result = null;
+    try { result = measureBench(); } catch (e) { result = { error: String((e && e.message) || e) }; }
+    try { document.dispatchEvent(new CustomEvent('sqh:hud-cost-result', { detail: JSON.stringify(result) })); } catch (err) {}
+  });
 
   // ---------- the panel ----------
 
@@ -1506,8 +2439,9 @@
     .note,.sub{font-size:12px;color:#bfc4cc;margin-top:4px}.grade-area{margin-top:14px}.grades{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:5px}.grade{min-width:0}.grade+.grade{border-left:1px solid #454b54;padding-left:16px}.grade-value{display:block;font-size:22px;font-weight:600;line-height:1.2;margin:3px 0;overflow-wrap:anywhere}.grade-meaning{display:block;font-size:12px;color:#bfc4cc}.grade-percent{display:block;font-size:12px;margin-top:3px}.grade-caveat{font-size:11.5px;color:#a6adb8;margin-top:8px}.grade-reason{color:#bfc4cc;margin-top:3px}
     .sound{margin-top:14px;padding-top:12px;border-top:1px solid #454b54}.sound-value{font-weight:600;font-size:15px;margin-top:2px}.sound .note{margin-top:1px}
     .issue{border-left:2px solid #efbb73;padding-left:10px;margin-top:14px}.issue-title{font-weight:600;color:#efbb73}.issue .note{color:#f4f5f7}.steps{padding-left:17px;font-size:12px;margin:4px 0 0}.steps li{margin:3px 0}
-    .more{border-top:1px solid #454b54;margin-top:14px;padding-top:4px}summary{min-height:36px;display:list-item;align-content:center;font-size:12px;font-weight:600;color:#bfc4cc;list-style-position:inside}summary::marker{color:#a6adb8}
-    .det{padding-top:4px}.sec{font-size:13px;font-weight:600;color:#f4f5f7;margin:14px 0 5px}.row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;padding:4px 0}.k{font-size:12px;color:#bfc4cc}.v{overflow-wrap:anywhere;min-width:0}.why{display:block;color:#a6adb8;font-size:11.5px;margin-top:2px}.j{display:none}.quiet{font-size:11.5px;color:#a6adb8;margin-top:12px}.quiet div+div{margin-top:5px}.quiet b{color:#bfc4cc;font-weight:600}.f{font-size:11px;color:#a6adb8;margin-top:14px}
+    .watch{margin-top:14px;padding-top:12px;border-top:1px solid #454b54}.watch a{color:#9cc3f5;display:inline-block;margin-top:4px;font-weight:600}.watch,.watch *{pointer-events:auto}.watch .note{cursor:auto}.watch a{cursor:pointer}
+    .more{border-top:1px solid #454b54;margin-top:6px;padding-top:4px}summary{min-height:36px;display:list-item;align-content:center;font-size:12px;font-weight:600;color:#bfc4cc;list-style-position:inside}summary::marker{color:#a6adb8}
+    .det{padding-top:4px}.sec{font-size:13px;font-weight:600;color:#f4f5f7;margin:14px 0 5px}.row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;padding:4px 0}.k{font-size:12px;color:#bfc4cc}.v{overflow-wrap:anywhere;min-width:0}.why{display:block;color:#a6adb8;font-size:11.5px;margin-top:2px}.j{display:none}.quiet{font-size:11.5px;color:#a6adb8;margin-top:12px}.quiet div+div{margin-top:5px}.quiet b{color:#bfc4cc;font-weight:600}.f{font-size:11px;color:#a6adb8;margin-top:14px}.measured{margin-top:4px}.measured .t{margin-top:0;line-height:1.15}.measured .chart,.measured svg{display:block;width:100%;max-width:300px;height:56px}.measured .note{min-height:1.15em;margin-top:2px}.measured + .grade-area{margin-top:4px}.row.room .v{min-height:3.4em}
     @media(prefers-reduced-motion:reduce){.pill{transition:none}}
   `;
 
@@ -1519,13 +2453,28 @@
     const gradeCell = (name, g, meaning, pct) => '<div class="grade"><div class="label">' + name + '</div>' + (g ? '<span class="grade-value">' + escHtml(g.letter) + '</span><span class="grade-meaning">' + escHtml(meaning) + '</span><span class="grade-percent">' + escHtml(g.pct + pct) + '</span>' : '<div class="note">No reference for ' + escHtml(o.size) + '.</div>') + '</div>';
     const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, 'Against Blu-ray', ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
     const sound = o.sound ? '<div class="sound"><div class="label">Sound</div><div class="sound-value">' + escHtml(o.sound.value) + '</div>' + (o.sound.meaning ? '<div class="note">' + escHtml(o.sound.meaning) + '</div>' : '') + '</div>' : '';
+    const who = o.watch ? (o.watch.self ? 'This browser' : (BROWSER_LABEL[o.watch.browser] || 'The other browser')) : '';
+    const watch = o.watch ? '<div class="watch"><div class="label">Watch in</div><div class="note">' + escHtml(who + ' has ' + o.watch.reason + '.') + '</div>' + (!o.watch.self && o.watch.href ? '<a href="' + escHtml(o.watch.href) + '">Open in ' + escHtml(BROWSER_LABEL[o.watch.browser] || 'that browser') + '</a>' : '') + (!o.watch.self && !o.watch.href && o.watch.page ? '<div class="note">Open this page in ' + escHtml(BROWSER_LABEL[o.watch.browser] || 'that browser') + ': ' + escHtml(o.watch.page) + '</div>' : '') + '</div>' : '';
     const issue = o.issue ? '<div class="issue"><div class="issue-title">' + escHtml(o.issue.title) + '</div><div class="note">' + escHtml(o.issue.text) + '</div>' + (o.issue.steps && o.issue.steps.length ? '<ul class="steps">' + o.issue.steps.map(x => '<li>' + escHtml(x) + '</li>').join('') + '</ul>' : '') + '</div>' : '';
     const overlay = o.overlay ? '<div class="issue"><div class="issue-title">Picture altered by the page</div><div class="note">' + escHtml(o.overlay) + '</div></div>' : '';
-    return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="label">Picture</div><div class="t">' + escHtml(o.picture) + '</div>' + (o.pictureNote ? '<div class="note">' + escHtml(o.pictureNote) + '</div>' : '') + '<div class="grade-area"><div class="label">Data grades</div>' + gradesHtml + '</div>' + sound + issue + overlay;
+    const mv = r.measure;
+    let measuredHtml = '';
+    if (mv && mv.show) {
+      if (mv.blocked) measuredHtml = '<div class="measured"><div class="note">Measured video data: not available here</div><div class="note">' + escHtml(mv.blocked) + '</div></div>';
+      else {
+        const value = mv.ready ? mv.avgText + ' average' : 'Measuring\u2026 (' + mv.need + ')';
+        const note = !mv.ready ? '' : (mv.fullSeconds ? ('highest second ' + mv.highText + ' \u00b7 range ' + mv.rangeText) : 'highest second and range need a full measured second');
+        const chart = mv.ready && mv.svg ? mv.svg : '<div class="chart"></div>';
+        const shares = mv.ready && mv.shares ? '<div class="note">' + escHtml(mv.shares) + '</div>' : '';
+        const cov = mv.ready && mv.coverage > 0 && mv.coverage < 0.99 ? '<div class="note">Coverage ' + Math.round(mv.coverage * 100) + '% of watched time</div>' : '';
+        measuredHtml = '<div class="measured"><div class="label">Measured video data</div><div class="t">' + escHtml(value) + '</div><div class="note">' + escHtml(note) + '</div>' + chart + shares + cov + '</div>';
+      }
+    }
+    return '<div class="kick">' + escHtml(r.kicker) + '</div><div class="label">Picture</div><div class="t">' + escHtml(o.picture) + '</div>' + (o.pictureNote ? '<div class="note">' + escHtml(o.pictureNote) + '</div>' : '') + measuredHtml + '<div class="grade-area"><div class="label">Data grades</div>' + gradesHtml + '</div>' + sound + watch + issue + overlay;
   }
 
   function detHtml(r) {
-    const row = ([k, v, lv, why]) => '<div class="row"><div class="k">' + escHtml(k) + '</div><div class="v">' + escHtml(v) + (why ? '<span class="why">' + escHtml(why) + '</span>' : '') + '</div></div>';
+    const row = ([k, v, lv, why, cls]) => '<div class="row' + (cls ? ' ' + escHtml(cls) : '') + '"><div class="k">' + escHtml(k) + '</div><div class="v">' + escHtml(v) + (why ? '<span class="why">' + escHtml(why) + '</span>' : '') + '</div></div>';
     const sections = (r.sections || []).map(s => ({ ...s, rows: (s.rows || []).filter(x => x[1] && !['not reported', 'measuring…', '—'].includes(x[1])) })).filter(s => s.rows.length).map(s => '<div class="sec">' + escHtml(s.name) + '</div>' + s.rows.map(row).join('')).join('');
     const context = r.quiet && r.quiet.length ? '<div class="quiet">' + r.quiet.map(([k,v]) => '<div><b>' + escHtml(k) + '</b> ' + escHtml(v) + '</div>').join('') + '</div>' : '';
     return sections + context + '<div class="f">Control+Shift+H opens and closes this panel.</div>';
@@ -1599,6 +2548,7 @@
 
   function render() {
     if (!host || !host.isConnected) return;
+    const renderT0 = performance.now();
     placeHost();
     pillOn = pillWanted();
     if (!pillOn && !panelOpen) {
@@ -1610,6 +2560,9 @@
       r = report();
     } catch (e) {
       r = { wait: true, title: 'Couldn\u2019t read the video', sub: String((e && e.message) || e), pill: 'Couldn\u2019t read the video', dot: 'unk', sections: [] };
+    }
+    if (r && r.card) {
+      try { publishCard(r.card); pullCards(r.card.id, r.card.browser); } catch (e) {}
     }
     const root = host.shadowRoot;
     const pill = root.querySelector('.pill');
@@ -1627,6 +2580,8 @@
     panel.scrollTop = scroll;
     panel.classList.toggle('scrollable', panel.scrollHeight > panel.clientHeight);
     updateIdle();
+    measured.renderTimes.push(performance.now() - renderT0);
+    if (measured.renderTimes.length > 5000) measured.renderTimes.shift();
   }
 
   // No absent diagnostic is retained as a blank placeholder. Normal flow keeps all facts reachable.
@@ -1709,4 +2664,6 @@
   setInterval(probe, 2000);
   document.addEventListener('loadeddata', probe, true);
   document.addEventListener('playing', probe, true);
+  try { installPageHook(); } catch (e) {}
+  if (!measureTimer) measureTimer = setInterval(measureTick, 250);
 })();
