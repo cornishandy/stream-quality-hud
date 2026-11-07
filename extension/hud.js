@@ -546,12 +546,29 @@
   const drops = []; // { t, total, dropped } over the last minute, for judging recent dropped frames
   let playSince = 0, lastSession, lastVideo = null;
 
+  // Keep paused readings only for this source; never average across playback boundaries.
+  let measurement = null, knownRates = { rate: null, arate: null, fps: null };
+  const measurementEpoch = new WeakMap();
+  for (const event of ['pause', 'playing', 'ratechange']) document.addEventListener(event, (e) => {
+    if (e.target && e.target.localName === 'video') measurementEpoch.set(e.target, (measurementEpoch.get(e.target) || 0) + 1);
+  }, true);
+
   function measure(video) {
     const now = performance.now();
     const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
     const bytes = typeof video.webkitVideoDecodedByteCount === 'number' ? video.webkitVideoDecodedByteCount : null;
     const abytes = typeof video.webkitAudioDecodedByteCount === 'number' ? video.webkitAudioDecodedByteCount : null;
-    if (samples.length && samples[samples.length - 1].video !== video) (samples.length = 0), (drops.length = 0);
+    const session = sessionStart.get(video), src = video.currentSrc, speed = video.playbackRate;
+    const sourceChanged = !measurement || measurement.video !== video || measurement.session !== session || measurement.src !== src;
+    const lastSample = samples[samples.length - 1];
+    const countersReset = lastSample && ((bytes != null && bytes < lastSample.bytes) || (abytes != null && abytes < lastSample.abytes) || (q && q.totalVideoFrames < lastSample.frames));
+    if (sourceChanged || countersReset) {
+      samples.length = drops.length = 0;
+      knownRates = { rate: null, arate: null, fps: null };
+    }
+    if (sourceChanged || countersReset || measurement.speed !== speed || measurement.paused !== video.paused || measurement.epoch !== measurementEpoch.get(video)) samples.length = 0;
+    if (measurement && measurement.speed !== speed) knownRates = { rate: null, arate: null, fps: null };
+    measurement = { video, session, src, speed, paused: video.paused, epoch: measurementEpoch.get(video) };
     if (q) {
       drops.push({ t: now, total: q.totalVideoFrames, dropped: q.droppedVideoFrames });
       while (drops.length > 2 && now - drops[1].t > 60000) drops.shift();
@@ -559,8 +576,7 @@
     samples.push({ t: now, bytes, abytes, frames: q ? q.totalVideoFrames : null, video });
     while (samples.length > 11) samples.shift();
     // Time since this source first played; a pause doesn’t restart "the first minute", a new source does.
-    const session = sessionStart.get(video);
-    if (session !== lastSession || video !== lastVideo) (playSince = 0), (lastSession = session), (lastVideo = video);
+    if (sourceChanged || session !== lastSession || video !== lastVideo) (playSince = 0), (lastSession = session), (lastVideo = video);
     if (!video.paused && !playSince) playSince = now;
     const first = samples[0], last = samples[samples.length - 1];
     const secs = (last.t - first.t) / 1000;
@@ -570,6 +586,10 @@
       if (first.abytes != null && last.abytes > first.abytes) arate = ((last.abytes - first.abytes) * 8) / secs;
       if (first.frames != null && last.frames > first.frames) fps = (last.frames - first.frames) / secs / (video.playbackRate || 1);
     }
+    if (rate > 0) knownRates.rate = rate;
+    if (arate > 0) knownRates.arate = arate;
+    if (fps > 0) knownRates.fps = fps;
+    if (video.paused) ({ rate, arate, fps } = knownRates);
     return { q, rate, arate, audioSeen: last.abytes > 0, fps, playingFor: playSince ? (now - playSince) / 1000 : 0 };
   }
 
@@ -596,7 +616,7 @@
   function sourceKind(video) {
     const src = video.currentSrc || '';
     if (/^blob:/.test(src)) return 'adaptive stream (Media Source)';
-    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (WebKit’s own player)';
+    if (/\.m3u8(\?|#|$)/i.test(src)) return 'HLS (browser’s own player)';
     if (/^https?:/.test(src)) return 'single file';
     return src ? src.split(':')[0] : 'none';
   }
@@ -652,11 +672,14 @@
     let host = location.hostname, path = location.pathname;
     try {
       const a = location.ancestorOrigins;
-      if (a && a.length) (host = new URL(a[a.length - 1]).hostname), (path = '');
+      if (window !== window.top) {
+        try { host = window.top.location.hostname; path = window.top.location.pathname; }
+        catch (e) { if (a && a.length) (host = new URL(a[a.length - 1]).hostname), (path = ''); }
+      }
     } catch (e) {}
     host = host.replace(/^www\./, '');
     const on = (h) => host === h || host.endsWith('.' + h);
-    return SERVICES.find((s) => s.hosts.some(on) && (!s.path || !path || (s.pathHost && !s.pathHost.test(host)) || s.path.test(path))) || null;
+    return SERVICES.find((s) => s.hosts.some(on) && (!s.path || (s.pathHost && !s.pathHost.test(host)) || s.path.test(path))) || null;
   }
 
   // Orion is WebKit, but its extensions see Chrome's user agent (pages see Safari's). WebKit-only APIs give it away.
@@ -825,8 +848,8 @@
     const size = TYPICAL[t] ? t : 'sd';
     const fam = !codec || / or /.test(codec) ? -1 : /H\.264/.test(codec) ? 0 : 1;
     const [lo, hi] = fam < 0 ? [TYPICAL[size][1][0], TYPICAL[size][0][1]] : TYPICAL[size][fam];
-    const what = (size === 'sd' ? 'this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
-    const range = 'typical ' + what + ': ' + lo + '–' + hi;
+    const what = (size === 'sd' ? 'for this size' : t) + (fam < 0 ? '' : ' ' + codec.replace(/ 10-bit$/, ''));
+    const range = 'typical ' + what + ': ' + lo + '–' + hi + ' Mbps';
     if (bps / 1e6 >= lo) return ['normal', range];
     if (measured) return ['note', 'lean; ' + range + '; varies by scene'];
     return [bps / 1e6 < lo / 2 ? 'unusual' : 'note', 'lean; ' + range];
@@ -839,7 +862,7 @@
   // 30 Mbps at 24 fps) scores about 0.6. A per-title encoder gives cartoons fewer bits on purpose.
   // Disc bands as shares of the Blu-ray reference (adjusted 0.30, 0.15, 0.09 and 0.055 bits per pixel over 0.6).
   const DISC_BPP = 0.6;
-  const GRADES = [[0.3, 'A'], [0.15, 'B'], [0.09, 'C'], [0.055, 'D'], [0, 'F']].map(([x, l]) => [x / DISC_BPP, l]);
+  const GRADES = [[0.3, 'A', 'disc-like'], [0.15, 'B', 'generous'], [0.09, 'C', 'typical streaming'], [0.055, 'D', 'lean'], [0, 'F', 'starved']].map(([x, l, word]) => [x / DISC_BPP, l, word]);
   // The streaming grade compares the same figure with a high mainstream streaming reference at the playing size, in
   // the same units (H.264-equivalent Mbps at 24 fps → adjusted bits per pixel). From GPT-6.1-Sol's sourced research
   // (21 Oct 2026): 4K 46.4 (Apple TV+, 29 Mbps HEVC, measured report), 1080p 11.2 (Max, 6.99 Mbps HEVC, measured
@@ -869,7 +892,7 @@
       return { letter: a === z ? 'up to ' + a[1] : a[1] + (far ? ' to ' : ' or ') + z[1], word: a === z ? a[2] || '' : a[2] ? a[2] + (far ? ' to ' : ' or ') + z[2] : '', pct };
     };
     const ref = STREAM_REF[size];
-    return { bpp: hi.bpp, disc: span(GRADES, (x) => x / DISC_BPP), stream: ref ? span(SGRADES, (x) => x / ref) : null };
+    return { bpp: hi.bpp, adj: hi.adj, disc: span(GRADES, (x) => x / DISC_BPP), stream: ref ? span(SGRADES, (x) => x / ref) : null };
   }
 
   // ---------- cards from browsers that actually played this film ----------
@@ -1264,7 +1287,8 @@
     // Frame rate first: the data grade needs it.
     const hz = refreshHz();
     const ft = frameTiming(hz);
-    const listedFps = (cfg && cfg.framerate) || (exact.length === 1 && exact[0].fps) || (uniq(playing.map((v) => v.fps)).length === 1 && playing[0].fps) || (ft && ft.fps);
+    const agreedFps = playing.length && playing.every((v) => Number.isFinite(v.fps) && v.fps > 0 && v.fps === playing[0].fps) ? playing[0].fps : null;
+    const listedFps = (cfg && cfg.framerate) || (exact.length === 1 && exact[0].fps) || agreedFps || (ft && ft.fps);
     const fps = listedFps || m.fps;
 
     // Picture: against the best version this browser says it can play in the video's own list, else the service's published cap.
@@ -1402,9 +1426,9 @@
       else pictureRows.push(['Streaming grade', 'reference unavailable', '', 'no high streaming reference for ' + playTag]);
       pictureRows.push([
         'Disc grade',
-        dg.letter + ' · ' + dg.pct + ' of the Blu-ray reference',
+        dg.letter + ' · ' + dg.word + ' · ' + dg.pct + ' of the Blu-ray reference',
         /F$/.test(dg.letter) && !/ /.test(dg.letter) ? 'unusual' : /[DF]$/.test(dg.letter) ? 'note' : 'normal',
-        (/ /.test(dg.letter) ? 'up to ' : '') + grade.bpp.toFixed(3) + ' bits per pixel; compared with 1080p H.264 at 30 Mbps and 24 fps; codec-adjusted' + how + '. A rough data guide.',
+        (/ /.test(dg.letter) ? 'up to ' : '') + grade.adj.toFixed(3) + ' bits per pixel; compared with 1080p H.264 at 30 Mbps and 24 fps; codec-adjusted' + how + '. A rough data guide.',
       ]);
     }
     const ov = overlays(video);
@@ -1448,7 +1472,7 @@
     } else soundRows.push(['Playing', measuredA ? 'about ' + measuredA + ', measured' : 'not reported', 'note', 'format and channels not reported']);
     if (ss) soundRows.push([S, sCap ? sCapText + ' in ' + B : 'limit for ' + B + ': unknown', '', ss.best ? 'best anywhere: ' + ss.best : 'best sound anywhere: unknown']);
     if (bestA && snd !== 'best') soundRows.push(['Top sent', audioLong(bestA), '', canBest === false ? B + ' can’t play it' : canBest && snd === 'lower' ? B + ' says it can decode it; the player didn’t pick it' : canBest ? B + ' says it can decode it' : '']);
-    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound, Chrome audio extension', '', 'after the browser; both on = processed twice']);
+    if (b === 'chrome') soundRows.push(['After this', 'Movie Sound or a Chrome audio extension, if on', '', 'after the browser; using both processes sound twice']);
     else soundRows.push(['After this', 'Movie Sound, if on', '', 'after the browser' + (surroundAny ? ', on stereo (surround folded)' : '') + '; not seen here']);
 
     // ---- Playback
@@ -1486,7 +1510,7 @@
       playbackRows.push(['Dropped', d + ' of ' + t.toLocaleString() + ' frames' + (t ? ' (' + pct.toFixed(pct && pct < 0.1 ? 2 : 1) + '%)' : ''), ...j]);
     }
     const ahead = bufferAhead(video);
-    const low = !video.paused && m.playingFor > 10 && ahead < 3 && !(video.duration - video.currentTime < 5);
+    const low = Number.isFinite(video.duration) && !video.paused && m.playingFor > 10 && ahead < 3 && !(video.duration - video.currentTime < 5);
     playbackRows.push(['Buffered', Math.round(ahead) + ' s ahead', ...(low ? (early ? ['note', 'low; still filling'] : ['unusual', 'low; may stall']) : ['normal', ''])]);
     playbackRows.push(['Source', sourceKind(video), '', '']);
 
@@ -2434,7 +2458,7 @@
     if (r.wait || !r.overview) return '<div class="t">' + escHtml(r.title) + '</div>' + (r.sub ? '<div class="sub">' + escHtml(r.sub) + '</div>' : '');
     const o = r.overview;
     const gradeCell = (name, g, meaning, pct) => '<div class="grade"><div class="label">' + name + '</div>' + (g ? '<span class="grade-value">' + escHtml(g.letter) + '</span><span class="grade-meaning">' + escHtml(meaning) + '</span><span class="grade-percent">' + escHtml(g.pct + pct) + '</span>' : '<div class="note">No reference for ' + escHtml(o.size) + '.</div>') + '</div>';
-    const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, 'Against Blu-ray', ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
+    const gradesHtml = o.grade ? '<div class="grades">' + gradeCell('Streaming', o.grade.stream, o.grade.stream ? o.grade.stream.word : '', ' of a high ' + o.size + ' stream') + gradeCell('Disc', o.grade.disc, o.grade.disc.word, ' of the Blu-ray reference') + '</div><div class="grade-caveat">Data grades, not a visual test.</div>' : '<div class="grade-reason">' + escHtml(o.gradeReason) + '</div>';
     const sound = o.sound ? '<div class="sound"><div class="label">Sound</div><div class="sound-value">' + escHtml(o.sound.value) + '</div>' + (o.sound.meaning ? '<div class="note">' + escHtml(o.sound.meaning) + '</div>' : '') + '</div>' : '';
     const who = o.watch ? (o.watch.self ? 'This browser' : (BROWSER_LABEL[o.watch.browser] || 'The other browser')) : '';
     const watch = o.watch ? '<div class="watch"><div class="label">Watch in</div><div class="note">' + escHtml(who + ' has ' + o.watch.reason + '.') + '</div>' + (!o.watch.self && o.watch.href ? '<a href="' + escHtml(o.watch.href) + '">Open in ' + escHtml(BROWSER_LABEL[o.watch.browser] || 'that browser') + '</a>' : '') + (!o.watch.self && !o.watch.href && o.watch.page ? '<div class="note">Open this page in ' + escHtml(BROWSER_LABEL[o.watch.browser] || 'that browser') + ': ' + escHtml(o.watch.page) + '</div>' : '') + '</div>' : '';
@@ -2500,7 +2524,9 @@
   }
 
   function ensureHost() {
-    pillOn = pillWanted();
+    const wanted = pillWanted();
+    if (wanted && !pillOn) noteInput();
+    pillOn = wanted;
     if (!pillOn && !panelOpen) {
       if (host && host.isConnected) leaveHost();
       return;
@@ -2508,6 +2534,7 @@
     if (!host) build();
     if (!host.isConnected) {
       placeHost();
+      noteInput();
       setTiming(true);
       if (!timer) timer = setInterval(() => {
         ensureHost();
@@ -2533,7 +2560,9 @@
     if (!host || !host.isConnected) return;
     const renderT0 = performance.now();
     placeHost();
-    pillOn = pillWanted();
+    const wanted = pillWanted();
+    if (wanted && !pillOn) noteInput();
+    pillOn = wanted;
     if (!pillOn && !panelOpen) {
       leaveHost();
       return;
@@ -2591,8 +2620,20 @@
   // The key toggles this frame's panel directly when it holds the video. Otherwise (a top page whose
   // player is in an iframe) it asks the background, which asks every frame whether a panel is showing
   // and then shows or hides it everywhere, just as the toolbar button does.
+  // Without an extension background, relay downward; accept only the direct parent.
+  const extensionRuntime = !!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+  function relayToggle() {
+    setPanel(!panelOpen);
+    for (const frame of document.querySelectorAll('iframe, frame')) {
+      try { frame.contentWindow.postMessage({ type: 'sqhud-descendant-toggle' }, '*'); } catch (e) {}
+    }
+  }
+  window.addEventListener('message', (e) => {
+    if (!extensionRuntime && window !== window.top && e.source === window.parent && e.data && e.data.type === 'sqhud-descendant-toggle') relayToggle();
+  });
+
   function requestToggle() {
-    const local = () => setPanel(!panelOpen);
+    const local = () => extensionRuntime ? setPanel(!panelOpen) : relayToggle();
     if (wantsPanel()) return local();
     try {
       chrome.runtime.sendMessage({ type: 'sqhud-toggle-request' }, (reply) => {

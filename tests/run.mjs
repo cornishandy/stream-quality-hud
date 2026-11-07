@@ -59,7 +59,7 @@ const B = '(Chrome|Safari)';
 const cases = [
   ['DASH, 720p playing and higher sent', 'mse.html?rep=1', [/Picture not at top yet/, /Playing 720p; 127\.0\.0\.1 sent (Chrome|Safari) up to 1080p/, /matched to its downloads/, /Playing\s+1280×720 \(720p\), H\.264/, /Top sent\s+1920×1080, H\.264, 6\.0 Mbps/, /3 versions, all SDR \(DASH\)/, /Bitrate\s+3\.0 Mbps listed/]],
   ['DASH, 1080p playing', 'mse.html?rep=2', [/1080p(?: SDR)?/, /Highest resolution sent for this video/, /Source\s+adaptive stream \(Media Source\)/]],
-  ['grades: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/Data grades\s+Streaming\s+C\s+moderate data\s+about 50% of a high 1080p stream/, /Disc\s+C\s+Against Blu-ray\s+about 20% of the Blu-ray reference/, /Data grades, not a visual test/, /Streaming grade\s+C · moderate data/, /0\.121 bits per pixel/, /Overlays\s+none found/]],
+  ['grades: 6 Mbps H.264 at 1080p, 24 fps', 'mse.html?rep=2', [/Data grades\s+Streaming\s+C\s+moderate data\s+about 50% of a high 1080p stream/, /Disc\s+C\s+typical streaming\s+about 20% of the Blu-ray reference/, /Data grades, not a visual test/, /Streaming grade\s+C · moderate data/, /0\.121 bits per pixel/, /Overlays\s+none found/]],
   ['grades: 720p uses its streaming reference', 'mse.html?rep=1', [/Streaming\s+B\s+solid data\s+about 70% of a high 720p stream/]],
   ['a player shade and subtitles are listed in details', 'mse.html?rep=2&overlay=1', [/Overlays\s+shading over 37%, up to 60% dark; subtitles/]],
   ['a filter on the video is called out', 'mse.html?rep=2&filter=1', [/Picture altered by the page/, /video filter brightness\(0\.8\)/, /the page changes the picture itself/]],
@@ -490,7 +490,7 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'Chromium') {
   }
   {
     const text = (await open(page, 'hlsaudio.html')) || '(no HUD)';
-    const pats = [/Playing\s+AAC stereo/, /Top sent\s+Dolby Atmos/, /2 versions, all SDR \(HLS\)/, /After this\s+Movie Sound, Chrome audio extension[\s\S]*?both on = processed twice/];
+    const pats = [/Playing\s+AAC stereo/, /Top sent\s+Dolby Atmos/, /2 versions, all SDR \(HLS\)/, /After this\s+Movie Sound or a Chrome audio extension, if on[\s\S]*?using both processes sound twice/];
     check('Chromium: HLS audio groups: stereo playing, Atmos listed, versions counted once', pats.every((p) => p.test(text)), 'missing ' + pats.filter((p) => !p.test(text)).join(', ') + '\n--- HUD ---\n' + text);
   }
 
@@ -588,7 +588,7 @@ if (!process.env.HUD_ENGINE || process.env.HUD_ENGINE === 'WebKit') {
   page.on('pageerror', (e) => errors.push(String(e)));
   await steadyLayout('WebKit', page);
   await shortWindow('WebKit', page);
-  await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /720p|1080p/, /Source\s+HLS \(WebKit’s own player\)/]]], errors);
+  await runCases('WebKit', page, [...cases, ['native HLS: the list is the video\u2019s own source', 'hlsnative.html', [/matched to its source/, /720p|1080p/, /Source\s+HLS \(browser’s own player\)/]]], errors);
   await soundCases('WebKit', page, errors);
   await pillChecks('WebKit', page);
   {

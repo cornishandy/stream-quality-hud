@@ -40,8 +40,8 @@ Most streaming players never say which version they picked. Chrome often gets a 
 - A player that feeds Media Source from a background worker cannot be read.
 - **One localhost exception, for comparing browsers.** The only host permission is `http://127.0.0.1:9791/*`. When you run `node tools/card-box.mjs`, each browser can save a short card for the film that is actually playing (site, path, browser, top size, codec, listed bitrate, colour, frame timing, whether the page alters the picture). The box stays on this Mac. It does not receive playlist URLs, segment URLs, cookies, or the list itself. If the box is not running, the panel keeps this browser's own card and does not recommend another browser. Safari reaches the box through the userscript's `GM_xmlhttpRequest` grant, not through a website permission.
 - **It never touches sound.** It doesn't create an audio context and doesn't hook the audio path.
-- **A verdict needs exact evidence:** the list the video itself is playing (its HLS source, or the list matching its own newest downloads since it started). Without that, it says it can't confirm, rather than guessing.
-- **Per-service limits** (for example, Netflix sends Chrome up to 1080p and Safari up to 4K) come from each service's own help pages. Sources and quotes are in [docs/SERVICES.md](docs/SERVICES.md) and [docs/SOUND.md](docs/SOUND.md).
+- **Higher-version advice needs playback evidence:** a higher version in the list matched to this video (its HLS source, or the list matching its own newest downloads since it started), plus browser decoder and screen support where relevant. Service-wide limits alone do not establish an available upgrade.
+- **Service capability notes (including unknown limits)** (for example, Netflix sends Chrome up to 1080p and Safari up to 4K) come from each service's own help pages. Sources and quotes are in [docs/SERVICES.md](docs/SERVICES.md) and [docs/SOUND.md](docs/SOUND.md).
 
 ## Develop
 
@@ -60,8 +60,8 @@ Most streaming players never say which version they picked. Chrome often gets a 
 - [x] Safari userscript, built from the same files
 - [x] Current picture, measured video data when the pieces can be read, data grades, plain-language sound and technical details
 - [x] Cross-browser film cards, compared only when both browsers saved one
-- [x] Published caps for Netflix, Prime Video, Disney+, Hulu, Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
-- [x] 221/221 checks (173 integration, 48 overview)
+- [x] Service capability notes, including unknown limits, for Netflix, Prime Video, Disney+, Hulu, HBO Max, Apple TV+, Paramount+, Peacock, AMC+, MUBI and Criterion Channel
+- [x] 223/223 checks (175 integration, 48 overview), plus 64/64 accepted-fix checks
 - [ ] Chrome Web Store listing (not planned)
 
 See [docs/DECISIONS.md](docs/DECISIONS.md) for why it works the way it does.
